@@ -1,4 +1,6 @@
 // Package bind：模块 5 唯一暴露给外部的面（gomobile bind 的边界）。
+// ⚠️ 必须放在 go/bind 而不是 go/internal/bind：gomobile 会把 gobind 代码生成到临时模块里，
+//    那里的代码 import 不了我们的 internal 包，报 "use of internal package ... not allowed"（踩过）。
 //
 // 铁律：这一层只允许 gomobile 支持的类型（string/int/bool/[]byte/error）。
 // 业务包（fanout/providers）不许直接出现在签名里 —— 否则 AAR 的 API 面会失控。

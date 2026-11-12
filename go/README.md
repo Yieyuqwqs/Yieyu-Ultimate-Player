@@ -8,7 +8,7 @@
 |---|---|
 | `internal/providers` | 源站适配（只发请求拿字节，不解析） |
 | `internal/fanout` | 并发扇出 + 超时 + 排序合并 |
-| `internal/bind` | **唯一的 AAR 出口**，只允许 gomobile 支持的类型 |
+| `bind` | **唯一的 AAR 出口**，只允许 gomobile 支持的类型（不能放 internal/，见文件头注释） |
 | `cmd/searchd` | 桌面调试入口（CI 里跑，不起 Android） |
 
 ## 三条边界
@@ -21,8 +21,8 @@
 
 ```bash
 go build ./...                        # 桌面验证
-gomobile bind -target=android/arm64 -androidapi 26 -o ../out/go/search.aar ./internal/bind
+gomobile bind -target=android/arm64 -androidapi 26 -o ../out/go/search.aar ./bind
 ```
 
-> `gomobile bind` 会生成 Java/Kotlin 门面。**只有 `internal/bind` 这一层的 API 会露出去**，
+> `gomobile bind` 会生成 Java/Kotlin 门面。**只有 `bind` 这一层的 API 会露出去**，
 > 这就是"极少量 Kotlin"能保住的原因。

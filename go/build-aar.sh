@@ -10,5 +10,5 @@ echo "→ 挂 golang.org/x/mobile（gomobile 的硬要求）"
 go get golang.org/x/mobile/cmd/gobind@latest >/dev/null 2>&1 || go get golang.org/x/mobile@latest
 
 mkdir -p "$OUT/go"
-gomobile bind -target=android/arm64 -androidapi "$API" -o "$OUT/go/search.aar" ./internal/bind
+gomobile bind -target=android/arm64 -androidapi "$API" -o "$OUT/go/search.aar" ./bind
 ls -lh "$OUT/go/search.aar"
