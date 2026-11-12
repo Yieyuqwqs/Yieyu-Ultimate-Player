@@ -38,6 +38,7 @@ int  Yieyu_Service_Ping(void);
 void Yieyu_Service_OnNotificationAction(int actionId);  // 0=play 1=pause 2=next 3=prev
 
 // ⑥ 诊断
+void        Yieyu_Free(void* p);   // 释放 core 分配的内存（Dart 侧用完必须调，否则泄漏）
 int         Yieyu_Version(void);
 const char* Yieyu_LastError(void);
 void        Yieyu_Stats(char* out, size_t cap);   // 各模块健康度一行一模块

@@ -1,6 +1,7 @@
 // [24] JSB 实现。这里只做"搬运与路由"，任何业务判定都必须在各自模块里。
 #include "jsb.h"
 #include <cstdio>
+#include <cstdlib>
 #include "../common/log.h"
 #include "../pipeline/engine.h"
 #include <atomic>
@@ -50,6 +51,8 @@ int  Yieyu_Service_Ping(void) { return g_inited.load() ? 1 : 0; }
 void Yieyu_Service_OnNotificationAction(int actionId) {
   yieyu::Engine::Instance().OnSystemAction(actionId);
 }
+
+void Yieyu_Free(void* p) { std::free(p); }
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }
 const char* Yieyu_LastError(void) { return g_lastError; }
