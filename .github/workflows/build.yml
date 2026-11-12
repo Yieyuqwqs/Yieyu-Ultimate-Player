@@ -35,6 +35,9 @@ jobs:
       - name: 0. 取代码
         uses: actions/checkout@v4
 
+      - name: 0.5 兜底可执行位（blob 传输可能丢 mode）
+        run: chmod +x build.sh core/build-native.sh app/build-app.sh
+
       - name: 1. JDK 17（Gradle 壳子要）
         uses: actions/setup-java@v4
         with:
