@@ -1,4 +1,7 @@
 [toolchain]
-channel = "1.79.0"
+# 别钉具体小版本：sqlx 0.8 的依赖链里 url → idna → idna_adapter 已经要求 rustc ≥ 1.81，
+# 钉 1.79 会以 "failed to parse manifest ... idna_adapter" 的形式炸掉（踩过）。
+# 需要绝对可复现时，等 P2 依赖稳定了再换成 Cargo.lock + 具体版本。
+channel = "stable"
 components = ["rustfmt", "clippy"]
 targets = ["aarch64-linux-android", "wasm32-wasip1"]

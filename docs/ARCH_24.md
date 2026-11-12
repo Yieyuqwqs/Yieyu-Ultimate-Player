@@ -242,7 +242,7 @@ Yieyu-Ultimate-Player/
 | Flutter / Dart | 3.24.x / 3.5 | Impeller 默认即开（Android Vulkan） |
 | NDK | r27c | `ANDROID_NDK` |
 | minSdk / targetSdk | 26 / 34 | **26 是 AAudio 的硬门槛** |
-| Rust | 1.79 stable | `edition = 2021`，targets: `aarch64-linux-android` |
+| Rust | stable（≥1.81） | `edition = 2021`；sqlx 的 idna 链路要 1.81+ |
 | Go | 1.22 | gomobile + gomobile bind |
 | Zig | 0.13.0 | `-target aarch64-linux-android` |
 | C++ | C++20 | `-fno-exceptions -fno-rtti`（音频核） |
