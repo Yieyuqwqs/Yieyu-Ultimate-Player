@@ -113,8 +113,16 @@ jobs:
           SO=out/native/arm64/libyieyu_core.so
           file $SO; ls -lh $SO
           echo "--- 导出符号 ---"
-          $NM -D --defined-only $SO | grep -E ' T ' | head -30
-          $NM -D --defined-only $SO | grep -c 'Yieyu_' || echo "⚠ 没有 Yieyu_ 导出"
+          $NM -D --defined-only $SO | grep -E ' T ' | head -30 || true
+          echo "--- 硬校验：这 8 个必须都在 ---"
+          for sym in Yieyu_Init Yieyu_Shutdown Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get \
+                     Yieyu_Service_Ping Yieyu_Service_OnNotificationAction Yieyu_Version; do
+            if $NM -D --defined-only $SO | grep -q " $sym\$"; then
+              echo "  ✓ $sym"
+            else
+              echo "  ✗ 缺导出: $sym" >&2; exit 1
+            fi
+          done
 
       - name: 14. 编译 TS 清洗层（模块 6）
         run: ./build.sh ts
