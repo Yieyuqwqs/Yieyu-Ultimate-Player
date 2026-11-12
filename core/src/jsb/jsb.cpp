@@ -1,5 +1,6 @@
 // [24] JSB 实现。这里只做"搬运与路由"，任何业务判定都必须在各自模块里。
 #include "jsb.h"
+#include <cstdio>
 #include "../common/log.h"
 #include "../pipeline/engine.h"
 #include <atomic>

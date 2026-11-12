@@ -1,5 +1,6 @@
 // [20] SQLite 写者：播放进度 / 队列 / DSP 预设。单条 <0.3ms，事务批 16 条。
 #include "sqlite_kv.h"
+#include <cstdio>
 #include "../common/log.h"
 #include <cstring>
 

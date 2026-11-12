@@ -22,8 +22,10 @@ yieyu_ct_equal:
     sub     x5, x2, x4
     cmp     x5, #32
     b.lo    .Ltail
-    ldp     q0, q1, [x0, x4]
-    ldp     q2, q3, [x1, x4]
+    add     x6, x0, x4              // LDP 只吃立即数偏移/前后索引，不能写 [x0,x4]
+    add     x7, x1, x4
+    ldp     q0, q1, [x6]
+    ldp     q2, q3, [x7]
     eor     v0.16b, v0.16b, v2.16b
     eor     v1.16b, v1.16b, v3.16b
     orr     v0.16b, v0.16b, v1.16b

@@ -2,6 +2,7 @@
 // 白名单 API：http.get / json / base64 / log / 返回表。没有 os、没有 io、没有 package。
 // 防死循环：指令计数 hook（默认 5000 万条/次调用），超限 os 软掐；--hard-kill 模式走独立进程 SIGKILL。
 #include "../common/log.h"
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 
