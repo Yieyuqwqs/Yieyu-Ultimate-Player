@@ -2,6 +2,8 @@
 // 血泪教训（继承自 Aurora-30）：蓝牙耳机下 16k 以上能量会顶出"滋滋"，所以输出端常驻 16k 陡降 LPF。
 #include "../common/log.h"
 #include <cmath>
+#include <cstdio>
+#include <initializer_list>   // for (Lpf* f : {&g_lpfL, &g_lpfR}) 需要它
 
 #ifndef YIEYU_PI
 #define YIEYU_PI 3.14159265358979323846f
