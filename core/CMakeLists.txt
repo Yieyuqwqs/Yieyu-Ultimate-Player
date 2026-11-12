@@ -102,9 +102,9 @@ target_link_options(yieyu_core PRIVATE
   -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384
   -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map)
 
-set(YIEYU_LIBS android log dl)
+set(YIEYU_LIBS android log dl aaudio)   # aaudio 是 NDK 自带，离线也要链
 if(NOT YIEYU_OFFLINE_ASSETS)
-  list(APPEND YIEYU_LIBS aaudio avformat avcodec avutil swresample curl sqlite3 wasmedge)
+  list(APPEND YIEYU_LIBS avformat avcodec avutil swresample curl sqlite3 wasmedge)
   if(SPEEXDSP_LIB)
     list(APPEND YIEYU_LIBS ${SPEEXDSP_LIB})
   endif()

@@ -47,7 +47,7 @@ const STEPS = [
     cwd: 'zig', out: ['zig'], inputs: ['zig'] },
 
   { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so', cwd: 'rust',
-    cmd: () => ['cargo', 'build', '--manifest-path', 'rust/Cargo.toml', '--release',
+    cmd: () => ['cargo', 'build', '--release',
       '--target', 'aarch64-linux-android'],
     env: () => androidEnv(), out: ['rust'], inputs: ['rust'] },
 
