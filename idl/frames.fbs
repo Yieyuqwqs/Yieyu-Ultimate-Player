@@ -19,3 +19,6 @@ table RingMeta {
   capacity: uint;        // 必须是 2 的幂
   header: FrameHeader;
 }
+
+file_identifier "YFRM";
+root_type RingMeta;

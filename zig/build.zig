@@ -6,7 +6,9 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+    // ⚠️ 不要传 .preferred_optimize_mode！Zig 0.13 下它会跳过 -Doptimize 的注册，
+    //    导致命令行传 -Doptimize=ReleaseFast 直接报 "invalid option"（踩过）。
+    const optimize = b.standardOptimizeOption(.{});
 
     // 产物：libyieyu_mem.a，由 core/CMakeLists.txt 静态链进 libyieyu_core.so
     const lib = b.addStaticLibrary(.{

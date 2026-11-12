@@ -3,10 +3,10 @@
 // 并重新生成四端代码（--cpp --dart --rust --go）。任何一端手改生成物 = 打回。
 //
 // 生成：./build.sh idl
+//
+// ⚠️ 顺序要求：root_type / file_identifier 必须写在被引用的 table **之后**，
+//    否则 flatc 报 "unknown root type"（踩过）。
 namespace yieyu.jsb;
-
-file_identifier "YJSC";
-root_type Cmd;
 
 enum Op : ubyte {
   NONE = 0,
@@ -69,3 +69,6 @@ table Event {
   message: string;
   song_count: uint;
 }
+
+file_identifier "YJSC";
+root_type Cmd;
