@@ -1,5 +1,6 @@
 // 总指挥。真正的"业务决策"只有三件：能不能播、播什么、出错怎么办。
 #include "engine.h"
+#include <cstdio>
 #include "../jsb/jsb.h"
 #include "../common/log.h"
 #include "../sensor/gyro_asensor.h"

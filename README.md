@@ -34,7 +34,7 @@ Flutter+Rive ─ Go+TS+Lua ─ Rust(ring,Tokio)+C++ ─ NDK ASensor ─ FFmpeg+J
 | 11 | C++ | Obfuscator-LLVM | 机器码混淆与防篡改 |
 | 12 | Assembly | ARM64 NEON | 核心加密比对硬指令 |
 | 13 | C | FFmpeg | 解封装解码（FLAC → PCM） |
-| 14 | C++ | JUCE | 音频重采样（44.1k → 192k） |
+| 14 | C++ | **SpeexDSP**（原 JUCE） | 音频重采样（44.1k → 192k） |
 | 15 | C | AAudio | PCM 喂给声卡 |
 | 16 | C++ | Eigen | DSD 转换的矩阵数学 |
 | 17 | C++ | 原生多线程池 | DSP：31 段 EQ / 胆机 / 黑胶 |

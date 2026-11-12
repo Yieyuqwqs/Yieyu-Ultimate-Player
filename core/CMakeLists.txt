@@ -43,8 +43,15 @@ endif()
 # ─── 第三方（见 third_party/README.md）────────────────────────────────
 if(NOT YIEYU_OFFLINE_ASSETS)
   include(cmake/FindFFmpeg.cmake)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/juce juce EXCLUDE_FROM_ALL)
-  target_link_libraries(yieyu_core PRIVATE juce::juce_dsp juce::juce_audio_basics)
+  # [14] SpeexDSP（BSD-3，替代 JUCE）：头文件 + 预编译静态库
+  set(SPEEXDSP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/speexdsp/${ANDROID_ABI}"
+      CACHE PATH "SpeexDSP 预编译根目录")
+  if(EXISTS "${SPEEXDSP_ROOT}/include/speex/speex_resampler.h")
+    include_directories("${SPEEXDSP_ROOT}/include")
+    find_library(SPEEXDSP_LIB NAMES speexdsp HINTS "${SPEEXDSP_ROOT}/lib" REQUIRED)
+  else()
+    message(WARNING "缺 SpeexDSP 预编译 → 模块 14 走旁路（44.1k 直通）")
+  endif()
 endif()
 
 # ─── 源文件：按模块分组，一眼看得见谁是谁 ─────────────────────────────
@@ -53,7 +60,7 @@ set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
                 src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
 set(SRC_PIPE    src/pipeline/engine.cpp)
 set(SRC_AUDIO   src/audio/demux_ffmpeg.c               # [13]
-                src/audio/resample_juce.cpp            # [14]
+                src/audio/resample_speex.cpp           # [14] SpeexDSP
                 src/audio/aaudio_sink.c                # [15]
                 src/audio/dsd_eigen.cpp)               # [16]
 set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
@@ -98,6 +105,9 @@ target_link_options(yieyu_core PRIVATE
 set(YIEYU_LIBS android log dl)
 if(NOT YIEYU_OFFLINE_ASSETS)
   list(APPEND YIEYU_LIBS aaudio avformat avcodec avutil swresample curl sqlite3 wasmedge)
+  if(SPEEXDSP_LIB)
+    list(APPEND YIEYU_LIBS ${SPEEXDSP_LIB})
+  endif()
 endif()
 if(YIEYU_ENABLE_AI)
   list(APPEND YIEYU_LIBS onnxruntime)
@@ -127,7 +137,12 @@ if(YIEYU_OFFLINE_ASSETS)
 endif()
 
 # ─── 测试 ─────────────────────────────────────────────────────────────
-enable_testing()
-add_executable(yieyu_smoke tests/smoke_test.cpp)
-target_link_libraries(yieyu_smoke PRIVATE yieyu_core)
-add_test(NAME smoke COMMAND yieyu_smoke)
+# 测试只在宿主上跑（Android 交叉编译出来的 executable 没有意义）
+if(NOT ANDROID)
+  enable_testing()
+  add_executable(yieyu_smoke tests/smoke_test.cpp)
+  target_link_libraries(yieyu_smoke PRIVATE yieyu_core)
+  add_test(NAME smoke COMMAND yieyu_smoke)
+else()
+  message(STATUS "Android 目标：跳过 yieyu_smoke（测试在宿主跑）")
+endif()

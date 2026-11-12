@@ -21,7 +21,7 @@ int Yieyu_Post(const uint8_t* fbs, size_t len);
 size_t Yieyu_Poll(uint8_t* out, size_t cap);
 
 // ④ 数据面：可视化/进度用的只读快照（PCM 环 + 峰值），由 Flutter 每帧拉一次
-typedef struct {
+struct Yieyu_Snapshot {
   int32_t  playing;       // 0/1
   int32_t  sampleRate;    // 44100 / 48000 / 192000
   int64_t  positionMs;
@@ -29,7 +29,8 @@ typedef struct {
   float    peakL, peakR;
   int32_t  eqPoints;      // 模块 17 提供的 31 点（喂模块 2 的 Rive 曲线）
   float    eqDb[31];
-} Yieyu_Snapshot;
+};
+typedef struct Yieyu_Snapshot Yieyu_Snapshot;
 int Yieyu_Snapshot_Get(Yieyu_Snapshot* out);
 
 // ⑤ 给模块 22（Kotlin 前台服务）的最小面：只读状态，不含业务判定

@@ -2,10 +2,12 @@
 // 模块 9→13 的字节环、13→14 的 PCM 环、14→15 的输出环都用它。
 // 铁律：容量必须是 2 的幂；读写指针各自缓存，避免乒乓假共享。
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 template <typename T>
 class SpscRing {
@@ -46,8 +48,6 @@ class SpscRing {
     return n;
   }
 
-  // 只读窥视（EQ 曲线可视化用，不消耗）
-  const T* peek(size_t* outN) const { return nullptr, *outN = 0, (const T*)nullptr; }
   size_t capacity() const { return cap_; }
 
  private:
@@ -55,8 +55,8 @@ class SpscRing {
   T* const buf_;
   alignas(64) std::atomic<size_t> w_{0};
   alignas(64) std::atomic<size_t> r_{0};
-  alignas(64) mutable size_t wCached_{0};
-  mutable size_t rCached_{0};
+  alignas(64) size_t wCached_{0};
+  size_t rCached_{0};
 };
 
 // 便捷别名（模块编号即所有者）

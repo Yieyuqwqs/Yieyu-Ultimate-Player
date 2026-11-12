@@ -17,7 +17,7 @@ node_modules/
 
 # 第三方二进制（见 third_party/README.md）
 /third_party/ffmpeg/
-/third_party/juce/
+/third_party/speexdsp/
 /third_party/eigen/
 /third_party/lua/
 /third_party/wasmedge/

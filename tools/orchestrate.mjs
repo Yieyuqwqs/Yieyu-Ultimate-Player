@@ -46,9 +46,9 @@ const STEPS = [
     cmd: () => ['zig', 'build', '-Dtarget=aarch64-linux-android', '-Doptimize=ReleaseFast', '--prefix', at('zig')],
     cwd: 'zig', out: ['zig'], inputs: ['zig'] },
 
-  { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so',
+  { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so', cwd: 'rust',
     cmd: () => ['cargo', 'build', '--manifest-path', 'rust/Cargo.toml', '--release',
-      '--target', 'aarch64-linux-android', '--locked'],
+      '--target', 'aarch64-linux-android'],
     env: () => androidEnv(), out: ['rust'], inputs: ['rust'] },
 
   { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
@@ -95,6 +95,7 @@ function androidEnv() {
     AR_aarch64_linux_android: path.join(tc, 'llvm-ar'),
     CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: cc,
     ANDROID_NDK: NDK, ANDROID_API: API, ANDROID_NDK_TOOLCHAIN_BIN: tc,
+    PATH: `${tc}:${process.env.PATH}`,
     CGO_ENABLED: '1', GOOS: 'android', GOARCH: 'arm64', CC: cc
   }
 }

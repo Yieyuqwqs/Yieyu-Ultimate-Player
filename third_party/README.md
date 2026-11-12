@@ -6,7 +6,7 @@
 | 模块 | 依赖 | 版本锚点 | 落位 | 许可证 | 备注 |
 |---|---|---|---|---|---|
 | 13 | **FFmpeg** | n7.0.2 | `third_party/ffmpeg/<abi>/{include,lib}` | LGPL-2.1+（**不带 --enable-gpl**） | NDK r27 编出，必须 `c++_shared` |
-| 14 | **JUCE** | 8.0.0 | `third_party/juce/`（`add_subdirectory`） | AGPLv3 / 商业 | ⚠️ **AGPL 会传染整个 App**，商业发行必须买 JUCE 授权 |
+| 14 | **SpeexDSP** | 1.2.1 | `third_party/speexdsp/<abi>/{include,lib}` | BSD-3 | 替代 JUCE：单库 300KB，实时无锁重采样 |
 | 15 | AAudio | NDK 自带 | — | Apache-2.0 | minSdk 26 |
 | 16 | **Eigen** | 3.4.0 | `third_party/eigen/Eigen/` | MPL2 | header-only |
 | 17 | 无（自研） | — | — | — | 线程池 + 31 段 EQ + 胆机 + 黑胶 |
@@ -26,6 +26,6 @@
 
 ## 许可证红线
 
-- **JUCE 是 AGPLv3**：闭源商业发行 = 必须买 JUCE 商业授权。整张表里唯一影响"能不能卖"的依赖。
+- ~~JUCE AGPLv3~~：**已换掉**（SpeexDSP，BSD-3）。这个项目是自己折腾用的，不做商业分发，版权焦虑归零。
 - **FFmpeg 别开 `--enable-gpl`**：开了整包 GPL，与闭源分发冲突。
 - Eigen 是 MPL2（文件级弱传染），静态链进 `.so` 没问题，但必须保留声明。

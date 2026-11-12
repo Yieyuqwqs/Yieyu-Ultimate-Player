@@ -73,7 +73,7 @@ cmake --build $OUT/native -j
 
 | 决定 | 值 | 理由 |
 |---|---|---|
-| `ANDROID_STL` | `c++_shared` | 与 JUCE/FFmpeg 预编译库统一，避免两套 STL |
+| `ANDROID_STL` | `c++_shared` | 与 SpeexDSP/FFmpeg 预编译库统一，避免两套 STL |
 | `-fvisibility=hidden` | ON | 只导出 JSB 的 8 个符号，其余全藏（配合 [11] 混淆） |
 | `-fno-exceptions -fno-rtti` | 音频核（dsp/audio） | 实时路径零异常开销 |
 | `ANDROID_ARM_NEON` | TRUE | [12] 汇编与 Eigen 都要 |

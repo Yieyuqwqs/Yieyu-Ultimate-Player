@@ -2,6 +2,10 @@
 // 输出 31 个 dB 点给模块 2（Rive 曲线），这条通路是"模块 17 → 24 JSB → 2 Rive"。
 #include "../common/log.h"
 #include <cmath>
+
+#ifndef YIEYU_PI
+#define YIEYU_PI 3.14159265358979323846f
+#endif
 #include <cstring>
 
 namespace yieyu {
@@ -17,7 +21,7 @@ float  g_outDb[kBands]  = {0};
 
 void eq31_init(int sampleRate) {
   for (int i = 0; i < kBands; ++i) {
-    const float w0 = 2.0f * (float)M_PI * kFreqs[i] / (float)sampleRate;
+    const float w0 = 2.0f * YIEYU_PI * kFreqs[i] / (float)sampleRate;
     const float alpha = std::sin(w0) / (2.0f * 1.41f);  // Q≈1.41 → 1/3 倍频程
     const float a0 = 1.0f + alpha;
     g_bands[i] = { alpha / a0, 0.0f, -alpha / a0, -2.0f * std::cos(w0) / a0, (1.0f - alpha) / a0, 0, 0 };
@@ -29,7 +33,7 @@ void eq31_set_gain(int band, float db) {
   if (band < 0 || band >= kBands) return;
   g_gainDb[band] = db;
   const float A = std::pow(10.0f, db / 40.0f);
-  const float w0 = 2.0f * (float)M_PI * kFreqs[band] / 48000.0f;
+  const float w0 = 2.0f * YIEYU_PI * kFreqs[band] / 48000.0f;
   const float alpha = std::sin(w0) / (2.0f * 1.41f);
   const float a0 = 1.0f + alpha / A;
   g_bands[band].b0 = (1.0f + alpha * A) / a0;

@@ -1,0 +1,153 @@
+name: build-apk
+
+# 真构建：把 13 个缺失工具全装上，编出 .so 和 APK。
+# 私有仓库分钟数敏感 → 只在 push main 和手动触发时跑。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'rust/**'
+      - 'go/**'
+      - 'ts/**'
+      - 'zig/**'
+      - 'app/**'
+      - 'asm/**'
+      - 'idl/**'
+      - 'tools/**'
+      - 'build.sh'
+      - '.github/workflows/build.yml'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: arm64 全链路
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      YIEYU_OFFLINE_ASSETS: 'ON'   # 空实现：先把链路和骨架编过，third_party 后面再钉
+      YIEYU_JOBS: '4'
+    steps:
+      - name: 0. 取代码
+        uses: actions/checkout@v4
+
+      - name: 1. JDK 17（Gradle 壳子要）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 2. Go 1.22（模块 5）
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: 3. Rust + android target（模块 3/10/19）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+          components: rustfmt, clippy
+
+      - name: 4. Flutter 3.24.5（模块 1/2）
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: 5. NDK + SDK 定位（runner 预装）
+        run: |
+          echo "ANDROID_NDK=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+          echo "ANDROID_API=26" >> $GITHUB_ENV
+          echo "NDK = $ANDROID_NDK_LATEST_HOME"
+          cat "$ANDROID_NDK_LATEST_HOME/source.properties" || true
+          ls "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" | head -5
+
+      - name: 6. Zig 0.13（模块 4）
+        run: |
+          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o /tmp/zig.tar.xz
+          sudo tar -xJf /tmp/zig.tar.xz -C /opt
+          sudo ln -sf /opt/zig-linux-x86_64-0.13.0/zig /usr/local/bin/zig
+          zig version
+
+      - name: 7. flatc（模块 21 代码生成）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatbuffers-compiler || {
+            curl -fsSL https://github.com/google/flatbuffers/releases/download/v24.3.25/Linux.flatc.binary.g++-13.zip -o /tmp/flatc.zip
+            unzip -oq /tmp/flatc.zip -d /tmp/flatc && sudo mv /tmp/flatc/flatc /usr/local/bin/ && sudo chmod +x /usr/local/bin/flatc
+          }
+          flatc --version
+
+      - name: 8. gomobile（模块 5 的 AAR）
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          gomobile init
+          gomobile version || true
+
+      - name: 9. doctor（先看工具全没全）
+        run: ./build.sh doctor || true
+
+      - name: 10. 编 Zig 分配器 + idl 代码生成
+        run: ./build.sh zig idl
+
+      - name: 11. 编 Rust 三个 .so（模块 3/10/19）
+        run: ./build.sh rust
+
+      - name: 12. 编 libyieyu_core.so（模块 7/9/12~18/20/21/23/24）
+        run: ./build.sh native
+
+      - name: 13. 符号自检（导出面必须正好是白名单）
+        run: |
+          NM=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
+          SO=out/native/arm64/libyieyu_core.so
+          file $SO; ls -lh $SO
+          echo "--- 导出符号 ---"
+          $NM -D --defined-only $SO | grep -E ' T ' | head -30
+          $NM -D --defined-only $SO | grep -c 'Yieyu_' || echo "⚠ 没有 Yieyu_ 导出"
+
+      - name: 14. 编译 TS 清洗层（模块 6）
+        run: ./build.sh ts
+
+      - name: 15. Go 构建校验（模块 5）
+        run: cd go && go vet ./... && go build ./...
+
+      - name: 16. Flutter 出 APK（模块 1/2）
+        run: ./build.sh flutter
+
+      - name: 17. 产物清单
+        run: ./build.sh verify && cat out/verify/MANIFEST.md || true
+
+      - name: 18. 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: YieyuUltimate-apk
+          path: |
+            out/apk/*.apk
+            out/verify/MANIFEST.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 19. 上传 .so（APK 挂了也能拿库去调）
+        uses: actions/upload-artifact@v4
+        with:
+          name: yieyu-native-arm64
+          path: |
+            out/native/arm64/*.so
+            out/rust/**/release/*.so
+            out/zig/**/*.a
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 20. 失败时把日志留一份
+        if: failure()
+        run: |
+          echo "=== out 树 ==="; find out -maxdepth 3 -type f 2>/dev/null | head -50
+          echo "=== 构建清单 ==="; cat out/.build-manifest.json 2>/dev/null || true

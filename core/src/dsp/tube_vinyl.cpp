@@ -3,6 +3,10 @@
 #include "../common/log.h"
 #include <cmath>
 
+#ifndef YIEYU_PI
+#define YIEYU_PI 3.14159265358979323846f
+#endif
+
 namespace yieyu {
 namespace {
 bool  g_tube = true, g_vinyl = false, g_lpf = true;
@@ -15,7 +19,7 @@ double g_wowPhase = 0;
 
 void tube_vinyl_init(int sampleRate) {
   // 12 阶级联巴特沃斯（骨架期先二阶占位，P2 补级联）
-  const float w0 = 2.0f * (float)M_PI * g_lpfCutoff / (float)sampleRate;
+  const float w0 = 2.0f * YIEYU_PI * g_lpfCutoff / (float)sampleRate;
   const float alpha = std::sin(w0) / (2.0f * 0.7071f);
   const float a0 = 1.0f + alpha;
   const float b0 = (1.0f - std::cos(w0)) / 2.0f / a0;

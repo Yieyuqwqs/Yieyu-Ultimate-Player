@@ -16,7 +16,10 @@ const ts = path.join(ROOT, 'ts')
 const esmOut = path.join(OUT, 'ts', 'esm')
 fs.mkdirSync(esmOut, { recursive: true })
 
-if (!fs.existsSync(path.join(ts, 'node_modules'))) run('npm', ['ci', '--no-audit', '--no-fund'], ts)
+if (!fs.existsSync(path.join(ts, 'node_modules'))) {
+  const hasLock = fs.existsSync(path.join(ts, 'package-lock.json'))
+  run('npm', [hasLock ? 'ci' : 'install', '--no-audit', '--no-fund'], ts)
+}
 run(path.join(ts, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json', '--outDir', esmOut], ts)
 
 const entry = path.join(esmOut, 'clean', 'index.js')

@@ -8,7 +8,7 @@
 
 #include "../common/ring.h"
 
-struct Yieyu_Snapshot;  // jsb.h
+struct Yieyu_Snapshot;  // 全局作用域前向声明（jsb.h 里是具名 struct）
 
 namespace yieyu {
 

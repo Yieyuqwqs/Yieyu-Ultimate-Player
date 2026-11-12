@@ -38,7 +38,7 @@
 | 11 | C++ | Obfuscator-LLVM | 机器码混淆与防篡改 | `core/cmake/ObfuscatorLLVM.cmake` + `tools/ollvm/` | 自定义 NDK 工具链 | 混淆后的 `.so` |
 | 12 | Assembly | ARM64 NEON | 核心加密比对指令（微秒级硬指令） | `asm/neon_ct_compare.S` | CMake ASM | `libyieyu_core.so` 内 |
 | 13 | C | FFmpeg | 解封装与解码：FLAC → PCM | `core/src/audio/demux_ffmpeg.c` + `third_party/ffmpeg/` | CMake 预编译库 | `libavformat/libavcodec.so` |
-| 14 | C++ | JUCE | 音频重采样：44.1k → 192k | `core/src/audio/resample_juce.cpp` | CMake (juce_dsp) | `libyieyu_core.so` 内 |
+| 14 | C++ | **SpeexDSP** | 音频重采样：44.1k → 192k | `core/src/audio/resample_speex.cpp` | CMake（BSD-3，静态链） | `libyieyu_core.so` 内 |
 | 15 | C | AAudio | 把 PCM 喂给手机声卡 | `core/src/audio/aaudio_sink.c` | CMake + `libaaudio` | `libyieyu_core.so` 内 |
 | 16 | C++ | Eigen | DSD 转换的底层矩阵数学 | `core/src/audio/dsd_eigen.cpp` | header-only | 编进 core |
 | 17 | C++ | 原生多线程池 | DSP 音效：31 段 EQ、胆机失真、黑胶 | `core/src/dsp/` | CMake 静态链 | `libyieyu_core.so` 内 |
@@ -103,7 +103,7 @@ Yieyu-Ultimate-Player/
 │   │   │   └── engine.cpp          总指挥：装/卸各模块，唯一状态机
 │   │   ├── audio/
 │   │   │   ├── demux_ffmpeg.c      【模块 13】
-│   │   │   ├── resample_juce.cpp   【模块 14】
+│   │   │   ├── resample_speex.cpp  【模块 14】
 │   │   │   ├── aaudio_sink.c       【模块 15】
 │   │   │   └── dsd_eigen.cpp       【模块 16】
 │   │   ├── dsp/                    【模块 17】

@@ -1,15 +1,18 @@
-# NDK r27c · arm64-v8a 工具链。minSdk 26 = AAudio 的硬门槛（模块 15）。
-set(CMAKE_SYSTEM_NAME Android)
-set(CMAKE_SYSTEM_VERSION 26)
-set(CMAKE_ANDROID_ARCH_ABI arm64-v8a)
-set(CMAKE_ANDROID_NDK $ENV{ANDROID_NDK})
-set(CMAKE_ANDROID_STL_TYPE c++_shared)     # 与 JUCE/FFmpeg 预编译库统一
-set(CMAKE_ANDROID_ARM_NEON ON)             # 模块 12 与 Eigen 都要
-set(CMAKE_C_COMPILER   "$ENV{ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang")
-set(CMAKE_CXX_COMPILER "$ENV{ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++")
-set(CMAKE_ASM_COMPILER "$ENV{ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang")
-set(CMAKE_AR     "$ENV{ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar")
-set(CMAKE_RANLIB "$ENV{ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib")
-set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+# NDK r27 · arm64-v8a。
+# 注意：不要手搓编译器路径 —— 直接委托 NDK 自带的 android.toolchain.cmake，
+# 它会正确处理 sysroot / libc++ / API level / NEON，手搓那套在 r27 上会踩 STL 与 unwinder。
+set(ANDROID_ABI        "arm64-v8a"      CACHE STRING "" FORCE)
+set(ANDROID_PLATFORM   "android-26"     CACHE STRING "" FORCE)   # 26 = AAudio 硬门槛（模块 15）
+set(ANDROID_STL        "c++_shared"     CACHE STRING "" FORCE)   # 与 SpeexDSP/FFmpeg 预编译统一
+set(ANDROID_ARM_NEON   ON               CACHE BOOL   "" FORCE)   # 模块 12 汇编 + Eigen 都要
+set(ANDROID_PIE        ON               CACHE BOOL   "" FORCE)
+
+if(NOT DEFINED ENV{ANDROID_NDK} AND NOT DEFINED ANDROID_NDK)
+  message(FATAL_ERROR "ANDROID_NDK 未设置")
+endif()
+set(_ndk "$ENV{ANDROID_NDK}")
+if(NOT _ndk)
+  set(_ndk "${ANDROID_NDK}")
+endif()
+
+include("${_ndk}/build/cmake/android.toolchain.cmake")
