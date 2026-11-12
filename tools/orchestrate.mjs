@@ -74,7 +74,7 @@ const STEPS = [
     cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },
 
   { id: 'flutter', deps: ['native', 'go', 'ts', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
-    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app'] },
+    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',
     cmd: () => ['node', 'tools/verify.mjs'], out: ['verify'] }

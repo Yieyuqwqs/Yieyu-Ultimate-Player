@@ -32,7 +32,7 @@ class _HomePageState extends State<HomePage> {
             ..clear()
             ..addAll(list);
         }));
-    GestureBridge.instance.start();
+    GestureBridge.instance.load();   // 加载失败不影响界面
   }
 
   @override

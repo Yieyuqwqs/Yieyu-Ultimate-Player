@@ -30,6 +30,19 @@ for so in "$OUT/native/arm64/libyieyu_core.so" \
   if [[ -f "$so" ]]; then cp -v "$so" "$JNI/"; else echo "⚠ 缺 $so（App 会降级运行）"; fi
 done
 
+# ★ 关键：ANDROID_STL=c++_shared 意味着 libyieyu_core.so 依赖 libc++_shared.so，
+# 而 gradle 不会自动把它打进 APK → 装机后 dlopen 直接失败（踩过，别删这段）。
+if [[ -n "${ANDROID_NDK:-}" ]]; then
+  CXX_SHARED="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+  if [[ -f "$CXX_SHARED" ]]; then
+    cp -v "$CXX_SHARED" "$JNI/"
+  else
+    echo "⚠ 找不到 libc++_shared.so：$CXX_SHARED" >&2
+  fi
+else
+  echo "⚠ 没设 ANDROID_NDK，跳过 libc++_shared.so（装机会 dlopen 失败）" >&2
+fi
+
 mkdir -p assets/plugins
 cp -v "$OUT"/wasm/*.wasm assets/plugins/ 2>/dev/null || echo "（暂无 wasm 插件，跳过）"
 
