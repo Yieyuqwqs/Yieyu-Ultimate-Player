@@ -24,7 +24,13 @@ run(path.join(ts, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json', '--outDir', 
 
 const entry = path.join(esmOut, 'clean', 'index.js')
 const bundle = path.join(OUT, 'ts', 'cleaner.mjs')
-const r = spawnSync(path.join(ts, 'node_modules/.bin/esbuild'), [entry, '--bundle', '--format=esm', '--minify', `--outfile=${bundle}`], { stdio: 'inherit' })
+// 入口在 out/ 下，向上找不到 ts/node_modules → 必须把 NODE_PATH 指过去，
+// 否则报 "Could not resolve zod"（踩过）。
+const r = spawnSync(
+  path.join(ts, 'node_modules/.bin/esbuild'),
+  [entry, '--bundle', '--format=esm', '--minify', `--outfile=${bundle}`],
+  { stdio: 'inherit', env: { ...process.env, NODE_PATH: path.join(ts, 'node_modules') } },
+)
 if (r.status !== 0) { console.error('esbuild 失败 → 若尚未 npm i esbuild，先 npx esbuild'); process.exit(1) }
 const kb = (fs.statSync(bundle).size / 1024).toFixed(1)
 console.log(`  → ${bundle} (${kb} KB)`)

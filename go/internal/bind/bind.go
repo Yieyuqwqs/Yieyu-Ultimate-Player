@@ -5,6 +5,7 @@
 package bind
 
 import (
+	"context"
 	"time"
 
 	"github.com/Yieyuqwqs/Yieyu-Ultimate-Player/go/internal/fanout"
@@ -19,7 +20,8 @@ func SearchRaw(keyword string, budgetMs int) (string, error) {
 	if budgetMs <= 0 {
 		budgetMs = 800
 	}
-	res, err := fanout.Search(nil, keyword, time.Duration(budgetMs)*time.Millisecond)
+	// 注意：nil context 会让 fanout 里的 context.WithTimeout panic → 必须传 Background
+	res, err := fanout.Search(context.Background(), keyword, time.Duration(budgetMs)*time.Millisecond)
 	if err != nil {
 		return "", err
 	}
