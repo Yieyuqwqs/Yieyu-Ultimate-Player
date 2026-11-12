@@ -98,10 +98,10 @@ cargo build --manifest-path rust/Cargo.toml --release \
 ```bash
 cd go && GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
   CC=$NDK/.../aarch64-linux-android26-clang go build ./...
-gomobile bind -target=android/arm64 -androidapi 26 -o $OUT/go/search.aar ./internal/bind
+gomobile bind -target=android/arm64 -androidapi 26 -o $OUT/go/search.aar ./bind
 ```
 
-- **只绑 `internal/bind` 一层**（面积极小），业务包不直接暴露给 Kotlin/Dart。
+- **只绑 `bind` 一层**（面积极小），业务包不直接暴露给 Kotlin/Dart。
 - 依赖锁定 `go.sum`；cargo/go 都走 `--locked` / `-mod=readonly`（CI 防漂移）。
 
 ### 2.4 Zig（模块 4）

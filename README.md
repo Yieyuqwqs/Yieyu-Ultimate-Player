@@ -54,7 +54,7 @@ Flutter+Rive ─ Go+TS+Lua ─ Rust(ring,Tokio)+C++ ─ NDK ASensor ─ FFmpeg+J
 app/      Flutter 顶层（模块 1/2）+ 两个 ffi 绑定（模块 3/24）
 core/     C++ 汇聚层（模块 7/8/9/12~18/20/21/23/24）→ libyieyu_core.so
 rust/     Cargo workspace（模块 3 手势 / 10 验签 / 19 只读库）
-go/       协程搜歌（模块 5），唯一出口 internal/bind
+go/       协程搜歌（模块 5），唯一出口 go/bind
 ts/       Zod 洗数据（模块 6）→ out/ts/cleaner.mjs
 zig/      分配器（模块 4）→ libyieyu_mem.a
 asm/      NEON 常数时间比对（模块 12）
