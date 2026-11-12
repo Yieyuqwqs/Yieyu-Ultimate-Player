@@ -52,8 +52,7 @@ const STEPS = [
     env: () => androidEnv(), out: ['rust'], inputs: ['rust'] },
 
   { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
-    cmd: () => ['gomobile', 'bind', '-target=android/arm64', `-androidapi=${API}`,
-      '-o', path.join(at('go'), 'search.aar'), './internal/bind'],
+    cmd: () => ['bash', 'build-aar.sh'],
     cwd: 'go', env: () => androidEnv(), out: ['go'], inputs: ['go'] },
 
   { id: 'ts', deps: ['doctor'], bin: 'npm', desc: '模块6 TS 清洗层 → cleaner.mjs',
