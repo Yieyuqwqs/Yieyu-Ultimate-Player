@@ -95,11 +95,11 @@ Flutter 只直接 FFI 三个 so（`core`、`gesture`、`store`）。
 
 ## 现在到哪一步了（不吹）
 
-- ✅ 24 模块目录、契约、构建总控、数据流图全部在位
-- ⚠️ **还没编译过一次**：`third_party/` 只有说明，二进制未入库；
-  `YIEYU_OFFLINE_ASSETS=ON` 会编出"空实现"版本，用来先验证骨架能过
-- ⏭️ 下一步：`./build.sh doctor` → 补齐工具链 → `./build.sh zig idl native`（空实现）先出 `.so`
-
+- ✅ **云端全链路绿了**（run #20，12/12 步）：Zig → idl → Rust → C++ → TS → Go → Gradle → Flutter
+- ✅ **APK 装机可跑**：57.4MB，UI 正常，`libyieyu_core.so` 加载成功（红色降级条已消失）
+- ✅ 构建工具链 13 个缺失 → 0 缺失（全部在 GitHub Actions 里；这台手机永远编不了）
+- ⚠️ **仍然全是"空实现"**：FFmpeg / SpeexDSP / LuaJIT / WasmEdge 都是桩，**放不出声音** —— 这就是 P2 的全部工作
+- 📋 今日复盘 + 19 条踩坑台账 + 预判问题：[`docs/BLUEPRINT.md`](docs/BLUEPRINT.md)
 ## 许可证 / 红线
 
 - 本仓库暂未选定开源许可证（**默认私有**）。
