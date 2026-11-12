@@ -137,7 +137,7 @@ class JsbClient {
     if (_snapGet(sp) == 0) {
       final n = sp.ref.eqPoints;
       final eq = <double>[
-        for (var i = 0; i < n && i < 31; i++) sp.ref.eqDb[i].value,
+        for (var i = 0; i < n && i < 31; i++) sp.ref.eqDb[i],
       ];
       _snapCtrl.add(YieyuSnapshot(
         playing: sp.ref.playing == 1,

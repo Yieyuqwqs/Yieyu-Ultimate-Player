@@ -53,7 +53,7 @@ const STEPS = [
 
   { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
     cmd: () => ['bash', 'build-aar.sh'],
-    cwd: 'go', env: () => androidEnv(), out: ['go'], inputs: ['go'] },
+    cwd: 'go', env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, ANDROID_HOME: process.env.ANDROID_HOME || '', ANDROID_SDK_ROOT: process.env.ANDROID_SDK_ROOT || '' }), out: ['go'], inputs: ['go'] },
 
   { id: 'ts', deps: ['doctor'], bin: 'npm', desc: '模块6 TS 清洗层 → cleaner.mjs',
     cmd: () => ['node', 'tools/ts-build.mjs'], out: ['ts'], inputs: ['ts'] },
