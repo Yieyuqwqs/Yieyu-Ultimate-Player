@@ -1,0 +1,6 @@
+{
+  global:
+    Yieyu_Init; Yieyu_Shutdown; Yieyu_Post; Yieyu_Poll; Yieyu_Free;
+    Yieyu_Stats; Yieyu_Version; Yieyu_LastError;
+  local: *;
+};

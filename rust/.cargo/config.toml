@@ -1,0 +1,9 @@
+# 交叉编译到 Android arm64。
+# link（aarch64-linux-android26-clang）由 tools/orchestrate.mjs 注入到 PATH，
+# 或手动：export PATH="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android26-clang"
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384", "-C", "link-arg=-Wl,--gc-sections"]
+
+[target.wasm32-wasip1]
+# 模块 8 的插件宿主

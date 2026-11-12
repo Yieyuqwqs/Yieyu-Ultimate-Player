@@ -1,0 +1,21 @@
+// 【模块 21】数据面契约：共享内存环头（48 字节对齐友好的定长 struct）。
+// 与 core/src/ipc/flatbuf_codec.cpp 的 FrameHeader 必须逐字节一致（含 40 字节尺寸的 static_assert）。
+namespace yieyu.media;
+
+struct FrameHeader {
+  magic: uint;        // 'YFRM' = 0x5946524D
+  version: ushort;    // = YIEYU_JSB_ABI
+  channels: ushort;   // 固定 2
+  sample_rate: uint;  // 44100 / 48000 / 176400 / 192000
+  frames: uint;       // 本块采样帧数（192 = 4ms @48k）
+  seq: ulong;         // 单调递增，防撕裂
+  pts_us: ulong;      // 播放位置（微秒）
+  checksum: ulong;    // 调试期开，release 置 0
+}
+// 8 + ... = 4+2+2+4+4+8+8+8 = 40 字节
+
+table RingMeta {
+  name: string;          // "byte" | "pcm"
+  capacity: uint;        // 必须是 2 的幂
+  header: FrameHeader;
+}

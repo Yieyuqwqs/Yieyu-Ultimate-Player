@@ -1,0 +1,13 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # 边界铁律：Dart 侧不许 import 任何底层实现细节
+    avoid_print: error
+  exclude:
+    - lib/jsb/jsb_ops.dart   # flatc 生成，不参与 lint
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    unnecessary_lambdas: true

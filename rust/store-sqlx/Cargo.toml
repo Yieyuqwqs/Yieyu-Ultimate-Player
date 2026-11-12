@@ -1,0 +1,15 @@
+[package]
+name = "yieyu-store"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "模块19：本地库高速异步只读（SQLx + SQLite WAL）"
+
+[lib]
+name = "yieyu_store"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sqlx = { workspace = true }
+tokio = { workspace = true }

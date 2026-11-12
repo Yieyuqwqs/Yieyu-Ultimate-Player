@@ -1,0 +1,21 @@
+# 模块 3 / 10 / 19。三个 crate 只干一件事，互不依赖。
+[workspace]
+resolver = "2"
+members = ["gesture-tokio", "license-ring", "store-sqlx"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.79"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1.39", default-features = false, features = ["rt-multi-thread", "time", "sync", "macros"] }
+ring  = "0.17"
+sqlx  = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"      # 音频进程不留 panic 展开表
+strip = "symbols"    # 配合模块 11，先剥一层是一层

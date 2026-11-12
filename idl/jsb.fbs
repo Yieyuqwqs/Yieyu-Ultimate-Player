@@ -1,0 +1,71 @@
+// 【模块 21】控制面契约：UI ↔ 底层。
+// 改这个文件 = 改契约：必须同步把 core/src/jsb/jsb.h 的 YIEYU_JSB_ABI +1，
+// 并重新生成四端代码（--cpp --dart --rust --go）。任何一端手改生成物 = 打回。
+//
+// 生成：./build.sh idl
+namespace yieyu.jsb;
+
+file_identifier "YJSC";
+root_type Cmd;
+
+enum Op : ubyte {
+  NONE = 0,
+  PLAY = 1,
+  PAUSE = 2,
+  NEXT = 3,
+  PREV = 4,
+  SEARCH = 5,
+  SEEK = 6,
+  EQ_PRESET_NEXT = 7,
+  SET_EQ_BAND = 8,
+  LICENSE = 9,
+  LOAD_PLUGIN = 10
+}
+
+enum EventType : ubyte {
+  NONE = 0,
+  READY = 1,          // 冷启动完成（带 caps）
+  SEARCH_RESULT = 2,  // 搜歌回来了
+  STATE = 3,          // 播放状态变化
+  LICENSE_FAIL = 4,   // 验签失败 → UI 置灰
+  ERROR = 5,
+  STATS = 6
+}
+
+table SearchReq {
+  keyword: string (required);
+  budget_ms: uint = 800;
+  sources: [string];   // 空 = 全源
+}
+
+table PlayReq {
+  song_id: string;
+  url: string;         // 可能为空（本地文件 / 由源站脚本现取）
+}
+
+table SeekReq {
+  position_ms: long;
+}
+
+table EqBand {
+  index: ubyte;        // 0..30
+  db: float;           // -18 .. +18
+}
+
+table Cmd {
+  abi: ushort = 1;
+  seq: uint;
+  op: Op = NONE;
+  search: SearchReq;
+  play: PlayReq;
+  seek: SeekReq;
+  eq_bands: [EqBand];
+}
+
+table Event {
+  abi: ushort = 1;
+  type: EventType = NONE;
+  code: int;           // <0 为错误码
+  message: string;
+  song_count: uint;
+}

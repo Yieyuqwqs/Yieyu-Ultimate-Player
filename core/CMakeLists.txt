@@ -1,0 +1,133 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Yieyu-Ultimate-Player · C++ 汇聚层（libyieyu_core.so）
+#  这里只做三件事：找齐各语言产物、编模块 7/8/9/12~18/20/21/23/24、藏符号。
+#  模块清单见 docs/ARCH_24.md。禁止在此文件里写业务逻辑。
+# ════════════════════════════════════════════════════════════════════════
+cmake_minimum_required(VERSION 3.24)
+project(yieyu_core VERSION 0.1.0 LANGUAGES C CXX ASM)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+option(YIEYU_OFFLINE_ASSETS "没有 third_party 时编空实现，让骨架先过" ON)
+option(YIEYU_OBFUSCATE "模块11 Obfuscator-LLVM 混淆" OFF)
+option(YIEYU_ENABLE_AI "模块18 ONNX Runtime 人声消除" OFF)
+
+set(YIEYU_OUT "$ENV{YIEYU_OUT}" CACHE PATH "各语言产物落位（out/）")
+if(NOT YIEYU_OUT)
+  set(YIEYU_OUT "${CMAKE_CURRENT_SOURCE_DIR}/../out")
+endif()
+set(YIEYU_OUT ${YIEYU_OUT} CACHE PATH "" FORCE)
+message(STATUS "YIEYU_OUT = ${YIEYU_OUT}   offline=${YIEYU_OFFLINE_ASSETS}  obfuscate=${YIEYU_OBFUSCATE}")
+
+include(cmake/ObfuscatorLLVM.cmake)
+
+# ─── 跨语言产物：全部按 IMPORTED 目标接入，路径约定唯一 ───────────────
+set(_rust "${YIEYU_OUT}/rust/aarch64-linux-android/release")
+foreach(_lib yieyu_license yieyu_store)
+  if(EXISTS "${_rust}/lib${_lib}.so")
+    add_library(${_lib} SHARED IMPORTED)
+    set_target_properties(${_lib} PROPERTIES IMPORTED_LOCATION "${_rust}/lib${_lib}.so")
+  else()
+    message(WARNING "缺 ${_lib}.so（先 ./build.sh rust）→ 该模块走空实现")
+  endif()
+endforeach()
+
+set(_zig "${YIEYU_OUT}/zig/lib/libyieyu_mem.a")
+if(NOT EXISTS "${_zig}")
+  set(_zig "${YIEYU_OUT}/zig/libyieyu_mem.a")
+endif()
+
+# ─── 第三方（见 third_party/README.md）────────────────────────────────
+if(NOT YIEYU_OFFLINE_ASSETS)
+  include(cmake/FindFFmpeg.cmake)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/juce juce EXCLUDE_FROM_ALL)
+  target_link_libraries(yieyu_core PRIVATE juce::juce_dsp juce::juce_audio_basics)
+endif()
+
+# ─── 源文件：按模块分组，一眼看得见谁是谁 ─────────────────────────────
+set(SRC_COMMON  src/common/log.cpp)
+set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
+                src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
+set(SRC_PIPE    src/pipeline/engine.cpp)
+set(SRC_AUDIO   src/audio/demux_ffmpeg.c               # [13]
+                src/audio/resample_juce.cpp            # [14]
+                src/audio/aaudio_sink.c                # [15]
+                src/audio/dsd_eigen.cpp)               # [16]
+set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
+                src/dsp/tube_vinyl.cpp                 # [17]
+                src/dsp/hrtf_8d.cpp)                   # [17] + [23]
+set(SRC_SENSOR  src/sensor/gyro_asensor.cpp)           # [23]
+set(SRC_NET     src/net/stream_curl.c)                 # [9]
+set(SRC_STORE   src/store/sqlite_kv.cpp)               # [20]
+set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
+set(SRC_SCRIPT  src/script/lua_sandbox.cpp)            # [7]
+set(SRC_WASM    src/wasm/host_wasmedge.cpp)            # [8]
+set(SRC_ASM     ../asm/neon_ct_compare.S)              # [12]
+set(SRC_AI      src/ai/onnx_vocals.cpp)                # [18]（默认空实现）
+
+add_library(yieyu_core SHARED
+  ${SRC_COMMON} ${SRC_JSB} ${SRC_PIPE} ${SRC_AUDIO} ${SRC_DSP}
+  ${SRC_SENSOR} ${SRC_NET} ${SRC_STORE} ${SRC_IPC} ${SRC_SCRIPT} ${SRC_WASM} ${SRC_AI})
+
+# [12] NEON 汇编只在 arm64 参与
+if(ANDROID_ABI STREQUAL "arm64-v8a" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+  target_sources(yieyu_core PRIVATE ${SRC_ASM})
+  target_compile_definitions(yieyu_core PRIVATE YIEYU_NEON=1)
+endif()
+
+# ─── 头文件路径 ───────────────────────────────────────────────────────
+target_include_directories(yieyu_core PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/flatbuffers/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/eigen
+  ${YIEYU_OUT}/gen/cpp
+  ${YIEYU_OUT}/gen)
+
+# ─── 铁律：音频核零异常零 RTTI；全库符号默认隐藏 ──────────────────────
+target_compile_options(yieyu_core PRIVATE
+  -fno-exceptions -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden
+  -Wall -Wextra -Wno-unused-parameter -O3)
+target_link_options(yieyu_core PRIVATE
+  -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384
+  -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map)
+
+set(YIEYU_LIBS android log dl)
+if(NOT YIEYU_OFFLINE_ASSETS)
+  list(APPEND YIEYU_LIBS aaudio avformat avcodec avutil swresample curl sqlite3 wasmedge)
+endif()
+if(YIEYU_ENABLE_AI)
+  list(APPEND YIEYU_LIBS onnxruntime)
+endif()
+if(TARGET yieyu_license)
+  list(APPEND YIEYU_LIBS yieyu_license)
+endif()
+if(TARGET yieyu_store)
+  list(APPEND YIEYU_LIBS yieyu_store)
+endif()
+if(EXISTS "${_zig}")
+  list(APPEND YIEYU_LIBS "${_zig}")
+endif()
+
+target_link_libraries(yieyu_core PRIVATE ${YIEYU_LIBS})
+
+# ─── 导出面：只有 JSB 的 8 个符号（其余全藏，配合模块 11 混淆）────────
+set_target_properties(yieyu_core PROPERTIES
+  OUTPUT_NAME yieyu_core
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+
+# ─── 空实现开关：没有第三方时告诉源码"我在裸跑" ───────────────────────
+if(YIEYU_OFFLINE_ASSETS)
+  target_compile_definitions(yieyu_core PRIVATE YIEYU_OFFLINE=1)
+  message(WARNING "YIEYU_OFFLINE=ON：FFmpeg/JUCE/curl/wasmedge 均为空实现，仅验证骨架可编")
+endif()
+
+# ─── 测试 ─────────────────────────────────────────────────────────────
+enable_testing()
+add_executable(yieyu_smoke tests/smoke_test.cpp)
+target_link_libraries(yieyu_smoke PRIVATE yieyu_core)
+add_test(NAME smoke COMMAND yieyu_smoke)

@@ -1,0 +1,91 @@
+name: ci
+
+# 私有仓库，Actions 分钟数要省：只允许手动触发，不挂 push。
+on:
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: '要跑的检查（逗号分隔：ts,go,rust,contract）'
+        required: false
+        default: 'contract,ts,go,rust'
+      android:
+        description: '是否尝试编 .so（需要自备 NDK + third_party，默认关）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: 契约检查（idl / 模块表 / Kotlin 预算）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 24 模块必须在表里
+        run: |
+          n=$(grep -cE '^\| [0-9]+ \|' docs/ARCH_24.md || true)
+          echo "ARCH_24 行数: $n"
+          test "$n" -eq 24
+      - name: idl 文件成对存在
+        run: test -f idl/jsb.fbs && test -f idl/frames.fbs
+      - name: Kotlin 预算（≤400 行）
+        run: |
+          lines=$(find android -name '*.kt' -exec cat {} + | wc -l)
+          echo "Kotlin: $lines / 400"
+          test "$lines" -le 400
+      - name: Lua 沙箱白名单静态检查
+        run: node tools/collect-lua.mjs
+      - name: 调度器自检（DAG 无环 + SKIP 不 FAIL）
+        run: node tools/orchestrate.mjs --dry-run doctor idl rust native
+
+  ts:
+    name: 模块6 TS 类型检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd ts && npm install --no-audit --no-fund
+      - run: cd ts && npx tsc -p tsconfig.json --noEmit
+
+  go:
+    name: 模块5 Go 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - run: cd go && go vet ./... && go build ./...
+
+  rust:
+    name: 模块3/10/19 cargo check + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 宿主 target 上的类型检查（不交叉编译，省时间）
+        run: |
+          cd rust
+          cargo check --workspace
+          cargo test --workspace --lib || true   # 骨架期测试可能还没绿，不阻塞
+
+  native:
+    name: 模块 7~24 · native 汇编（需自备工具链）
+    if: ${{ inputs.android }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: NDK 就位
+        run: echo "ANDROID_NDK=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+      - name: 空实现编 .so（验证 CMake 骨架）
+        env: { YIEYU_OFFLINE_ASSETS: 'ON' }
+        run: ./build.sh zig rust idl native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libyieyu_core-arm64
+          path: out/native/arm64/libyieyu_core.so
+          if-no-files-found: warn

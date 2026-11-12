@@ -1,0 +1,30 @@
+name: yieyu_ultimate
+description: "Yieyu Ultimate Player · 纯血安卓 24 大技术巅峰架构（Flutter + Rive 顶层）"
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # [2] Rive：微操矢量动画。包里自带 C++ runtime，Dart 侧只喂输入。
+  rive: ^0.13.4
+  # [24] dart:ffi 直连 C++ JSB —— 不经过 JNI，无装箱、无引用表
+  ffi: ^2.1.2
+  # [21] FlatBuffers 的 Dart 运行时（生成代码在 lib/jsb/jsb_ops.dart）
+  flat_buffers: ^23.5.26
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/rive/
+    - assets/plugins/

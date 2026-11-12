@@ -1,0 +1,7 @@
+# 训练/导出侧（不是运行时！运行时是 C++ 的 onnxruntime）
+torch>=2.4,<3
+onnx>=1.16
+onnxruntime>=1.19
+numpy>=1.26
+soundfile>=0.12
+librosa>=0.10
