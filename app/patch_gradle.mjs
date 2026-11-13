@@ -62,23 +62,40 @@ function patchGradleProperties() {
 
 function patchSigning() {
   const dir = path.join(androidDir, 'app')
-  for (const name of ['build.gradle']) {
-    const p = path.join(dir, name)
-    if (!fs.existsSync(p)) continue
-    let s = fs.readFileSync(p, 'utf8')
-    const before = s
-    if (!s.includes('keystoreProperties')) {
-      s = [
-        'def keystoreProperties = new Properties()',
-        "def keystorePropertiesFile = rootProject.file('key.properties')",
-        'if (keystorePropertiesFile.exists()) {',
-        '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))',
-        '}',
-        '',
-      ].join('\n') + s
+  const p = path.join(dir, 'build.gradle')
+  if (!fs.existsSync(p)) return
+  let s = fs.readFileSync(p, 'utf8')
+  const before = s
+
+  // ⚠️ Gradle 8 有硬性顺序：plugins {} 之前只允许 buildscript / pluginManagement / plugins。
+  //    把 def keystoreProperties = new Properties() 放在文件最上面会让构建直接失败（踩过）：
+  //    "only buildscript {}, pluginManagement {} and other plugins {} script blocks are allowed
+  //     before plugins {} blocks"
+  //    → 必须插在 plugins {} 块**之后**。
+  const header = [
+    '',
+    '// ── 固定签名（由 app/patch_gradle.mjs 注入，位于 plugins{} 之后，不要手改）',
+    'def keystoreProperties = new Properties()',
+    "def keystorePropertiesFile = rootProject.file('key.properties')",
+    'if (keystorePropertiesFile.exists()) {',
+    '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))',
+    '}',
+    '',
+  ].join('\n')
+
+  if (!s.includes('keystoreProperties')) {
+    const m = s.match(/plugins\s*\{[\s\S]*?\}\s*\n/)
+    if (m) {
+      const at = m.index + m[0].length
+      s = s.slice(0, at) + header + s.slice(at)
+    } else {
+      s = header + s   // 没有 plugins{} 的极老模板，退回顶部
     }
-    if (!s.includes('signingConfigs')) {
-      s = s.replace(/android\s*\{/, (m) => m + `
+  }
+
+  // 注意：不能写 !s.includes('signingConfigs') —— 模板里的 signingConfigs.debug 会误判成已存在
+  if (!/signingConfigs\s*\{/.test(s)) {
+    s = s.replace(/android\s*\{/, (m) => m + `
     signingConfigs {
         release {
             keyAlias keystoreProperties['keyAlias']
@@ -87,10 +104,17 @@ function patchSigning() {
             storePassword keystoreProperties['storePassword']
         }
     }`)
-    }
-    s = s.replace(/signingConfig\s*=?\s*signingConfigs\.debug/g, 'signingConfig = signingConfigs.release')
-    if (s !== before) { fs.writeFileSync(p, s); console.log('  ✓ 固定签名已接入：' + name) }
   }
+  // 只有 key.properties 真的在，才切到 release 签名；否则保持 debug，
+  // 避免 storeFile=null 让构建直接崩（踩过）
+  const hasKey = fs.existsSync(path.join(androidDir, 'key.properties'))
+  if (hasKey) {
+    s = s.replace(/signingConfig\s*=?\s*signingConfigs\.debug/g, 'signingConfig = signingConfigs.release')
+  } else {
+    console.log('  ⚠ 没有 key.properties，本次仍用 debug 签名（无法覆盖安装）')
+  }
+
+  if (s !== before) { fs.writeFileSync(p, s); console.log('  ✓ 固定签名已接入：build.gradle') }
 }
 
 patchBuildGradle()

@@ -41,6 +41,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 0.3 固定签名（首次生成并提交，之后所有构建同一签名）
+        if: ${{ hashFiles('app/signing/yieyu.jks.b64') == '' }}
+        run: |
+          keytool -genkeypair -v -keystore /tmp/yieyu.jks -alias yieyu \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass yieyu2026 -keypass yieyu2026 \
+            -dname "CN=Yieyu Ultimate, OU=Self, O=Yieyu, L=CN, ST=CN, C=CN"
+          mkdir -p app/signing
+          base64 -w0 /tmp/yieyu.jks > app/signing/yieyu.jks.b64
+          git config user.email "actions@users.noreply.github.com"
+          git config user.name "yieyu-ci"
+          git add app/signing/yieyu.jks.b64
+          git commit -m "chore(signing): 生成固定签名密钥 [skip ci]"
+          git push
+          echo "✓ 固定签名已生成并提交，后续构建复用同一签名"
       - name: 0.1 兜底可执行位
         # ⚠️ 必须是块标量（run: |）。写成单行标量再追加缩进行，YAML 会把两行折叠成
         #    一条命令：chmod +x a b chmod +x c → "chmod: cannot access 'chmod'"（踩过）
