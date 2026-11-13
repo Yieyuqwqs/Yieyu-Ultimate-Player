@@ -90,9 +90,12 @@ class _DevPanelState extends State<DevPanel> {
     try {
       final dir = await getApplicationSupportDirectory();
       final f = File('${dir.path}/test440.wav');
-      if (!await f.exists()) await f.writeAsBytes(_wavTone(440.0, 3.0, 44100));
+      // 每次都重写：避免旧版本留下的半截文件把这条唯一的"听声"通道带偏
+      await f.writeAsBytes(_wavTone(440.0, 3.0, 44100), flush: true);
       final rc = JsbClient.instance.playUrl(f.path);
       setState(() => _hint = rc == 0 ? '已提交测试音（3 秒 440Hz）' : '未能受理（$rc）');
+      await _diag('本地测试音 path=${f.path} rc=$rc');
+      if (rc == 0) await _reportPlayFailure();   // 没声音时把 [13]/[15] 的真因直接摆出来
     } catch (_) {
       setState(() => _hint = '测试音写盘失败');
     }
@@ -177,7 +180,11 @@ class _DevPanelState extends State<DevPanel> {
         return;
       }
       final dir = await getTemporaryDirectory();
-      final out = File('${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}.bin');
+      // ★ 必须保留原扩展名：MediaExtractor 靠它选解封装器。
+      //   上一版存成 picked_<ts>.bin，扩展名被吃掉 → setDataSource 直接 rc=-3（"打不开音频"）。
+      var base = f.name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      if (base.isEmpty) base = 'picked.audio';
+      final out = File('${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$base');
       await out.writeAsBytes(bytes, flush: true);
       final rc = JsbClient.instance.playUrl(out.path);
       setState(() {
