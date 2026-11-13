@@ -1,7 +1,8 @@
 # HANDOFF · 接手必读（更新于 2026-11-13 深夜）
 
-> 一句话：**24 模块骨架 + 全链路云端构建全部打通（run #47 绿，11m43s）**，
-> 但**播放链路仍是空实现**，`libyieyu_core.so` 在真机上的加载状态**待确认**（见 §2）。
+> 一句话：**24 模块骨架 + 全链路云端构建全部打通（run #50 绿，13m）**；
+> **播放链路 13→15 已打通**（平台解码 + AAudio 出声，见 §2.6），**真机听声待老板点一次**；
+> `libyieyu_core.so` 的加载问题（Go 库没 SONAME）已修且产物实测无绝对路径依赖。
 
 ---
 
@@ -35,19 +36,20 @@
 
 ### 2.1 构建：绿
 
-`run #47`（`19e6ecd`）success，11m43s。产物：
+`run #50`（`9d8fa1f`，2026-11-13 15:5x）success，13m。上一版 `run #48`（`ce83692`）也绿。
+产物：
 
 | 产物 | 大小 | 说明 |
 |---|---|---|
-| `libyieyu_core.so` | 714K | 含 LuaJIT（826K 静态链进来）+ 24 模块骨架 |
+| `libyieyu_core.so` | 729K | 含 LuaJIT（826K 静态链进来）+ 24 模块骨架 + 播放链路（13/15 已真实现） |
 | `libyieyu_fetch.so` | ~5MB | Go 编的 C ABI HTTP（自带 TLS1.3/HTTP2） |
 | `libyieyu_{gesture,license,store}.so` | 小 | Rust 三件套 |
 | `libyieyu_mem.a` | 小 | Zig 分配器 |
 | `YieyuUltimate-arm64.apk` | 16.5MB | 固定签名，可直接覆盖安装 |
 
-### 2.2 文档构建的坑（**最后一次真机验证是失败状态**）
+### 2.2 文档构建的坑（**上一次真机验证是失败状态，修完还没复验**）
 
-最后一次装机反馈：首页显示「出了点小状况，部分功能暂时不可用」→ 说明
+有一次装机反馈：首页显示「出了点小状况，部分功能暂时不可用」→ 说明
 `JsbClient.init()` 抛异常或返回非 0，**原生核心没加载起来**。
 
 **已定位并修（run #45 起包含修复，run #47 复验构建仍绿；真机尚未复验）**：
@@ -56,10 +58,15 @@
 修法：`go build -ldflags="-extldflags=-Wl,-soname,libyieyu_fetch.so"`，并在 CI 里加了
 **15.5 动态依赖检查**（`NEEDED` 出现 `/` 就直接红）。
 
+> **2026-11-13 离线实测（run #50 产物，不靠真机）**：
+> `DT_NEEDED` = libandroid/liblog/libdl/libaaudio/**libmediandk**/libm/libyieyu_fetch/libc++_shared/libc
+> —— **全部是裸库名，没有绝对路径**；导出面 26 个符号（含新加的 6 个播放控制）齐全。
+> 但"能 dlopen、能不能出声"只有真机能答，所以 §2.3 第 1 步仍是装机。
+
 ### 2.3 接手第一件事（按顺序）
 
 ```
-1. 装 run #47 的 APK
+1. 装 /sdcard/Download/YieyuUltimate-run50-arm64.apk（run #50 产物，固定签名，可直接覆盖）
 2. 看首页顶部还有没有"出了点小状况"
    · 没有了 → 核心已加载，继续 §5 的 P2
    · 还在   → 设置页连续点标题 5 次 → 弹出启动日志原文（含 dlopen 的确切报错）
