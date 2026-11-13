@@ -10,6 +10,8 @@
 | `http.get` / `http.post` / `http.request` | 表形式的别名 |
 | `input` | 全局字符串，宿主注入（搜索词 / 歌曲 id） |
 | `log(...)` | 写黑匣子（**只有出错才落盘**） |
+| `json.decode(str)` | 字符串 → 表（嵌套上限 32，非 ASCII 的 \u 转义简化为 ?） |
+| `json.encode(value)` | 表 → 字符串 |
 
 > 之前只注册了 `http_get`，用 `http_post` 的脚本会直接报 nil —— 已修复，四种写法都指向同一个出口。
 
@@ -63,3 +65,26 @@ void  yieyu_fetch_free(char* p);
 - 单次响应上限 256KB，超时 12s
 - 只允许 http(s)，与沙箱白名单一致
 - 沙箱没链接到它时自动退化为返回空串（不崩）
+
+
+## 最小可用脚本模板（直接可用）
+
+```lua
+-- 把源站原文交给宿主清洗，自己不要解析（源站改字段时崩的是清洗层，不是你的脚本）
+function search(kw)
+  local url = "https://example.com/api/search?kw=" .. kw
+  local raw = http_get(url)
+  if raw == "" then return nil end        -- 网络失败：返回 nil，宿主会提示"网络开小差了"
+  return json.decode(raw)                 -- 需要自己解字段时用 json.decode
+end
+
+function get_url(song)
+  local raw = http_post("https://example.com/api/url", json.encode({ id = song.id }))
+  if raw == "" then return nil end
+  return json.decode(raw).url
+end
+
+return { search = search, get_url = get_url }
+```
+
+> 判断约定：`http_get` 失败返回 **空字符串**（不是 nil），所以用 `== ""` 判断。

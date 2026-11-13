@@ -141,6 +141,9 @@
 
 | 25 | 脚本 `http_get` 永远返回空 | 沙箱背后没有任何 HTTP 实现 | 新增 `go/fetch` → `libyieyu_fetch.so`（Go c-shared，自带 TLS），C++ 侧 `extern "C"` 直调；**不用 curl 是为了避开 OpenSSL 交叉编译** |
 
+| 26 | 脚本里 `json` 是 nil | 沙箱从来没提供 JSON 库 | 自研 ~200 行 `json.decode/encode`（Lua 5.1 兼容，禁 `lua_absindex/lua_rawlen`） |
+| 27 | `strtod` 报未声明 | 缺 `<cstdlib>` | 补齐 |
+
 ### C. 装机运行期（最值钱的两条）
 
 | # | 报错 | 根因 | 修法 |
