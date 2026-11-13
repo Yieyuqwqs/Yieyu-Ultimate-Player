@@ -25,9 +25,17 @@ class Engine {
   void   OnSystemAction(int actionId);
   void   Stats(char* out, size_t cap);
 
+  // 播放控制：JSB 只转发到这里，线程模型全在 pipeline/player.cpp
+  int  PlayUrl(const char* uri);
+  void PauseAudio();
+  void ResumeAudio();
+  void StopAudio();
+  int  SeekMs(int64_t ms);
+  void SetVolume(float v);
+
   // 各模块共享的环（唯一的"总线"）
   ByteRing& byteRing() { return *byteRing_; }
-  PcmRing&  pcmRing()  { return *pcmRing_; }
+  PcmRing&  pcmRing();                       // = 播放器的 PCM 环（唯一样本通道）
 
  private:
   Engine();
@@ -37,10 +45,6 @@ class Engine {
   std::atomic<State> state_{State::kIdle};
 
   std::unique_ptr<ByteRing> byteRing_;
-  std::unique_ptr<PcmRing>  pcmRing_;
-  std::atomic<int>  sampleRate_{48000};
-  std::atomic<int64_t> positionMs_{0}, durationMs_{0};
-  std::atomic<float> peakL_{0}, peakR_{0};
 };
 
 }  // namespace yieyu

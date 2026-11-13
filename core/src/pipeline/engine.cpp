@@ -6,16 +6,19 @@
 #include "../common/blackbox.h"
 #include "../sensor/gyro_asensor.h"
 #include "../store/sqlite_kv.h"
+#include "player.h"
+#include "../audio/aaudio_sink.h"
 
 namespace yieyu {
 
 Engine& Engine::Instance() { static Engine e; return e; }
 
 Engine::Engine()
-    : byteRing_(new ByteRing(1u << 18)),   // 256 KiB 字节环（curl→ffmpeg，够 3s 预取）
-      pcmRing_(new PcmRing(1u << 16)) {}   // 64K 样本 ≈ 1.3s @48k（DSP 与 AAudio 之间）
+    : byteRing_(new ByteRing(1u << 18)) {}   // 256 KiB 字节环（[9] 拉流用，3s 预取）
 
 Engine::~Engine() = default;
+
+PcmRing& Engine::pcmRing() { return Player::Instance().Ring(); }
 
 int Engine::Boot(const char* filesDir, const char* abi) {
   // ⓪ 黑匣子先起来：之后任何模块出错才有地方落盘。
@@ -52,11 +55,12 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   gyro_start(200 /* Hz */);
 
   state_.store(State::kReady);
-  LOGI("engine ready abi=%s sr=%d", abi, sampleRate_.load());
+  LOGI("engine ready abi=%s sr=%d", abi, Player::Instance().SampleRate());
   return 0;
 }
 
 void Engine::Shutdown() {
+  Player::Instance().Shutdown();
   gyro_stop();
   sqlite_kv_close();
   bb_flush();
@@ -64,42 +68,57 @@ void Engine::Shutdown() {
   state_.store(State::kIdle);
 }
 
+int Engine::PlayUrl(const char* uri) { return Player::Instance().PlayUrl(uri); }
+void Engine::PauseAudio() { Player::Instance().Pause(); }
+void Engine::ResumeAudio() { Player::Instance().Resume(); }
+void Engine::StopAudio() { Player::Instance().Stop(); }
+int  Engine::SeekMs(int64_t ms) { return Player::Instance().SeekMs(ms); }
+void Engine::SetVolume(float v) { Player::Instance().SetVolume(v); }
+
 int Engine::HandleCommand(const uint8_t* fbs, size_t len) {
   // 骨架期：只做"长度/版本"校验，真实分发见 idl/jsb.fbs 的 op 枚举
   if (len < 8) return -1;
   const uint8_t op = fbs[4];  // FlatBuffers 里 vtable 之后首个字段（示意）
   switch (op) {
-    case 1: state_.store(State::kPlaying); LOGI("cmd: play"); return 0;
-    case 2: state_.store(State::kReady);   LOGI("cmd: pause"); return 0;
+    case 1: ResumeAudio(); return 0;   // play
+    case 2: PauseAudio();  return 0;   // pause
+    case 3: StopAudio();   return 0;   // stop
     default: LOGI("cmd op=%u len=%zu（未实现）", op, len); return 0;
   }
 }
 
 size_t Engine::DrainEvents(uint8_t* out, size_t cap) {
   (void)out; (void)cap;
-  return 0;  // TODO(P1)：事件队列 → FlatBuffers 打包
+  return 0;  // TODO(P1)：事件队列 → FlatBuffers 打包（搜索结果/错误/授权状态）
 }
 
 int Engine::Snapshot(Yieyu_Snapshot* out) {
-  out->playing   = state_.load() == State::kPlaying ? 1 : 0;
-  out->sampleRate = sampleRate_.load();
-  out->positionMs = positionMs_.load();
-  out->durationMs = durationMs_.load();
-  out->peakL = peakL_.load();
-  out->peakR = peakR_.load();
-  out->eqPoints = 31;  // [17] 31 段 EQ → [2] Rive 曲线
+  Player& p = Player::Instance();
+  out->playing    = p.IsPlaying() ? 1 : 0;
+  out->sampleRate = p.SampleRate();
+  out->positionMs = p.PositionMs();
+  out->durationMs = p.DurationMs();
+  out->peakL      = p.PeakL();
+  out->peakR      = p.PeakR();
+  out->eqPoints   = 31;  // [17] 31 段 EQ → [2] Rive 曲线
   return 0;
 }
 
 void Engine::OnSystemAction(int actionId) {
   // 模块22 只转发，不做判定
-  LOGI("system action %d", actionId);
+  switch (actionId) {
+    case 0: ResumeAudio(); break;   // play
+    case 1: PauseAudio();  break;   // pause
+    default: break;                 // next/prev 由上层（模块 1）决定播什么
+  }
 }
 
 void Engine::Stats(char* out, size_t cap) {
+  Player& p = Player::Instance();
   std::snprintf(out, cap,
-                "state=%d sr=%d pos=%lld | jsb=ok dsp=ok sensor=ok store=ok",
-                (int)state_.load(), sampleRate_.load(), (long long)positionMs_.load());
+                "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d | jsb=ok dsp=ok sensor=ok store=ok",
+                (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
+                (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns());
 }
 
 }  // namespace yieyu

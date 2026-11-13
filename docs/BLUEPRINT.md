@@ -99,7 +99,7 @@
 
 ---
 
-## 三、踩坑台账（17 条，全部真报错 + 真修法）
+## 三、踩坑台账（20 条，全部真报错 + 真修法）
 
 ### A. 交付链路
 
@@ -127,6 +127,14 @@
 | 15 | `elementAt` / `getter 'value'` | Dart FFI 的 `Array<Float>` 用下标且直接给 `double` | `eqDb[i]` |
 | 16 | `Incompatible types 'String?' and 'Int'` | 我把 Intent action（String）和 native 码（Int）混成一个常量 | 拆成 `ACTION_*`（String）与 `CODE_*`（Int） |
 | 17 | `friendPathsSet$kotlin_gradle_plugin_common` | 缺 `android.useAndroidX=true` | 加 `android/gradle.properties` |
+
+### D. 播放链路（2026-11-13 打通 13→15 时踩到的）
+
+| # | 报错 | 根因 | 修法 |
+|---|---|---|---|
+| 18 | 装机后任何网络都失败（音源直链放不出来、Lua 的 `http_get` 返回空） | `flutter create` 只在 **debug/profile** 壳子里加 `INTERNET`，release 的 main manifest 没有 | `app/patch_manifest.mjs` 注入 `INTERNET` + `ACCESS_NETWORK_STATE` |
+| 19 | 装机没声音、日志里 `AAudio 全部打开失败` | 真机上 `AAUDIO_SHARING_MODE_EXCLUSIVE` 常被拒（非系统 App） | 独占+burst → 独占 → 共享+burst → 共享 **四级降级**，全失败才算失败 |
+| 20 | 出来的声音是噪声/爆音 | `AMediaCodec` 输出可能是 16bit 也可能是 float，且**只有收到 format-changed 后** `pcm-encoding` 才可信 | 默认按 16bit 处理，收到 format-changed 再改；mono 复制成两路，>2 声道只取前两路 |
 
 ### B2. 脚本热更链路（2026-11-13 晚补）
 
@@ -193,7 +201,7 @@
 | `gradle wrapper`（钉 Gradle 8.7） | ❌ 未加 |
 | Rust 单测接入 CI（`cargo test`） | ❌ 本地有测试，CI 没跑 |
 | Rive `.riv` 资源 | ❌ 未做（有降级绘制） |
-| 真实播放链路（解码 → DSP → AAudio 出声） | ❌ 全是 stub，**这就是 P2 的全部内容** |
+| 真实播放链路（解码 → DSP → AAudio 出声） | ◐ **13→15 已通**（平台解码 + AAudio 出声，见 HANDOFF §2.6）；[14] 重采样 / [17] DSP 还没接 |
 
 ---
 
@@ -202,8 +210,8 @@
 1. `./build.sh doctor` 看一眼；直接 `workflow_dispatch` 一次确认还绿。
 2. **P2 第一件事：只钉两个小依赖** —— SQLite（3.46 单文件）+ SpeexDSP（1.2.1）。
    写 `tools/fetch-deps.mjs`，下完校验 sha256 放进 `third_party/`。
-3. 打通 **9→13→15**：curl 拉一个本地 HTTP 文件 → FFmpeg 解码（先只 MP3）→ AAudio 出声。
-   **先不加 DSP**，听到声音再说。
+3. ~~打通 9→13→15~~ ✅ **2026-11-13 已用 13→15 打通**（`demux_platform.c` + `aaudio_sink.c`，`player.cpp` 调度）。
+   下一步：真机确认出声，再叠 [14] 重采样与 [17] DSP。
 4. 出声之后再叠 17（EQ31 → 胆机 → 黑胶 LPF），每加一级都用真机听 + 看 underrun 计数。
 5. FFmpeg 最后上（预编译包最容易踩 STL/ABI）。
 6. 每次改动都要过：`doctor` → build → **`nm` 符号自检** → 装机 → 日志里看 `[15] AAudio 起播`。

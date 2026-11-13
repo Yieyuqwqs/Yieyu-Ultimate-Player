@@ -54,6 +54,19 @@ int Yieyu_Snapshot_Get(Yieyu_Snapshot* out) {
   return yieyu::Engine::Instance().Snapshot(out);
 }
 
+// ── ⑦ 播放控制（异步受理，解码/打开都在 player 的线程里）─────────────
+int Yieyu_PlayUrl(const char* uri) {
+  if (!g_inited.load()) return -1;
+  bb_new_trace();
+  return yieyu::Engine::Instance().PlayUrl(uri);
+}
+
+void Yieyu_Pause(void) { if (g_inited.load()) yieyu::Engine::Instance().PauseAudio(); }
+void Yieyu_Resume(void) { if (g_inited.load()) yieyu::Engine::Instance().ResumeAudio(); }
+void Yieyu_Stop(void) { if (g_inited.load()) yieyu::Engine::Instance().StopAudio(); }
+int  Yieyu_SeekMs(int64_t ms) { return g_inited.load() ? yieyu::Engine::Instance().SeekMs(ms) : -1; }
+void Yieyu_SetVolume(float v) { if (g_inited.load()) yieyu::Engine::Instance().SetVolume(v); }
+
 int  Yieyu_Service_Ping(void) { return g_inited.load() ? 1 : 0; }
 void Yieyu_Service_OnNotificationAction(int actionId) {
   yieyu::Engine::Instance().OnSystemAction(actionId);

@@ -81,8 +81,10 @@ endif()
 set(SRC_COMMON  src/common/blackbox.cpp)
 set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
                 src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
-set(SRC_PIPE    src/pipeline/engine.cpp)
-set(SRC_AUDIO   src/audio/demux_ffmpeg.c               # [13]
+set(SRC_PIPE    src/pipeline/engine.cpp
+                src/pipeline/player.cpp)                # 解码线程 + PCM 环调度
+set(SRC_AUDIO   src/audio/demux_ffmpeg.c               # [13] FFmpeg（有预编译库时）
+                src/audio/demux_platform.c             # [13] 平台兜底：AMediaExtractor+AMediaCodec
                 src/audio/resample_speex.cpp           # [14] SpeexDSP
                 src/audio/aaudio_sink.c                # [15]
                 src/audio/dsd_eigen.cpp)               # [16]
@@ -126,6 +128,10 @@ target_link_options(yieyu_core PRIVATE
   -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map)
 
 set(YIEYU_LIBS android log dl aaudio)   # aaudio 是 NDK 自带，离线也要链
+if(ANDROID)
+  # [13] 平台解码后端：mediandk 也是 NDK 自带（API 21+），不引入任何第三方 .so
+  list(APPEND YIEYU_LIBS mediandk)
+endif()
 if(NOT YIEYU_OFFLINE_ASSETS)
   list(APPEND YIEYU_LIBS avformat avcodec avutil swresample curl sqlite3 wasmedge)
   if(SPEEXDSP_LIB)

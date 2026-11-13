@@ -39,7 +39,7 @@
 | 10 | Rust | ring | 密码学级验签：卡密、防抓包 | `rust/license-ring/` | `cargo build` | `libyieyu_license.so` |
 | 11 | C++ | Obfuscator-LLVM | 机器码混淆与防篡改 | `core/cmake/ObfuscatorLLVM.cmake` + `tools/ollvm/` | 自定义 NDK 工具链 | 混淆后的 `.so` |
 | 12 | Assembly | ARM64 NEON | 核心加密比对指令（微秒级硬指令） | `asm/neon_ct_compare.S` | CMake ASM | `libyieyu_core.so` 内 |
-| 13 | C | FFmpeg | 解封装与解码：FLAC → PCM | `core/src/audio/demux_ffmpeg.c` + `third_party/ffmpeg/` | CMake 预编译库 | `libavformat/libavcodec.so` |
+| 13 | C | FFmpeg（无预编译库时 **NDK mediandk** 兜底） | 解封装与解码：FLAC → PCM | `core/src/audio/demux_ffmpeg.c` + `core/src/audio/demux_platform.c` + `third_party/ffmpeg/` | CMake 预编译库 / NDK `mediandk` | `libavformat/libavcodec.so` 或系统解码器 |
 | 14 | C++ | **SpeexDSP** | 音频重采样：44.1k → 192k | `core/src/audio/resample_speex.cpp` | CMake（BSD-3，静态链） | `libyieyu_core.so` 内 |
 | 15 | C | AAudio | 把 PCM 喂给手机声卡 | `core/src/audio/aaudio_sink.c` | CMake + `libaaudio` | `libyieyu_core.so` 内 |
 | 16 | C++ | Eigen | DSD 转换的底层矩阵数学 | `core/src/audio/dsd_eigen.cpp` | header-only | 编进 core |

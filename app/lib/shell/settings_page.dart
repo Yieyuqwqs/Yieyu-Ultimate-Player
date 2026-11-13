@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../diag/boot_log.dart';
+import '../diag/dev_panel.dart';
 import '../jsb/jsb_client.dart';
 
 /// 【模块 1】设置页：导入 Lua 脚本 / 导出诊断日志。
@@ -108,19 +109,9 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _secretDiag() async {
-    final log = await BootLog.instance.read();
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('启动日志（仅开发用）'),
-        content: SingleChildScrollView(
-          child: SelectableText(log, style: const TextStyle(fontSize: 11)),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-        ],
-      ),
+    // 隐秘查错入口：连点标题 5 次 → 开发者面板（播放试听 + 启动日志）
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const DevPanel()),
     );
   }
 

@@ -59,6 +59,16 @@ YIEYU_API int  Yieyu_LogDir(char* outDir, size_t cap);
 YIEYU_API int  Yieyu_LogIsPublic(void);                      // 1=真的写进了 /storage/emulated/0/yieyu
 YIEYU_API void Yieyu_SetTrace(const char* traceId);
 
+// ⑦ 播放控制：能放歌的最小闭环（URI → [13] 解码 → [15] 出声）。
+//    语义：**异步受理** —— 返回 0 只代表请求交给了解码线程，不代表已经出声。
+//    注意：打开流可能阻塞在网络 IO 上，所以这条永远不会在调用线程里解码。
+YIEYU_API int  Yieyu_PlayUrl(const char* uri);   // 0=已受理；<0=参数错
+YIEYU_API void Yieyu_Pause(void);
+YIEYU_API void Yieyu_Resume(void);
+YIEYU_API void Yieyu_Stop(void);
+YIEYU_API int  Yieyu_SeekMs(int64_t ms);         // 0=已受理
+YIEYU_API void Yieyu_SetVolume(float v);         // 0..1
+
 // ── 模块 7 热更：脚本导入（不打包、不重启，秒生效）─────────────────
 // 扫描 /storage/emulated/0/yieyu/scripts/*.lua，黑名单校验后加载。
 // loaded/rejected 可传 NULL。返回 0=完成。

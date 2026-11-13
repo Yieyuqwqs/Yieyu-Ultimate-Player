@@ -65,7 +65,34 @@
    · 还在   → 设置页连续点标题 5 次 → 弹出启动日志原文（含 dlopen 的确切报错）
              把那段发给下一个人/模型，别猜
 3. 设置 → 导入 Lua 脚本 → 选 .lua → 期望提示"脚本导入成功，已就绪"
+4. 设置页**连点标题 5 次** → 开发者面板 → 粘一个音频直链 → 点「播放」听声（§2.6）
+   · 有声音 → 13→15 全链通；没声音 → 同一面板的「启动日志」里有原因
 ```
+
+---
+
+## 2.6 播放链路：平台解码后端 + AAudio 出声（2026-11-13 下午）
+
+**目标**：先做到"能放歌"——**不引任何第三方二进制**就能出声。
+
+| 层 | 文件 | 做什么 |
+|---|---|---|
+| [13] 解码 | `core/src/audio/demux_platform.c`（新） | AMediaExtractor 解封装 + AMediaCodec 解码 → float32 立体声交错；吃 http(s) 直链与本地路径 |
+| [13] 兜底 | `core/src/audio/demux_ffmpeg.c`（没动） | 有 FFmpeg 预编译库时仍走它；`YIEYU_OFFLINE=ON` 时是空实现 |
+| [15] 出声 | `core/src/audio/aaudio_sink.c`（重写） | 改成"拉数据回调"模型；独占→共享四级降级；PCM float 立体声 |
+| 调度 | `core/src/pipeline/player.{h,cpp}`（新） | 唯一解码线程 + PCM 环（131072 float ≈ 1.4s）+ 暂停/继续/停止/seek/音量；音频回调零锁零分配零日志 |
+| 导出 | `core/src/jsb/jsb.{h,cpp}` + `core/cmake/exports.map` | `Yieyu_PlayUrl / Pause / Resume / Stop / SeekMs / SetVolume`（**异步受理**：返回 0 只是"请求收到了"） |
+| 试听入口 | `app/lib/diag/dev_panel.dart`（新） | 设置页标题连点 5 次 → 开发者面板 → 填直链 → 播放 / 暂停 / ±10s / 音量 |
+
+**线程模型（守铁律 2，别改回去）**：
+Dart/JSB 线程只写原子请求 → 唯一解码线程做阻塞打开与解码 → 音频回调只 `Pull()`（读环 + 算增益/峰值）。
+
+**已知边界（不是 bug，别当 bug 报）**：
+- **不重采样**：AAudio 直接按源采样率开流（44.1k 就是 44.1k），[14] SpeexDSP 还没接；
+- **不接 DSP**：[17] 的 EQ / 胆机 / 黑胶还没进链路，先听到声音再叠；
+- **seek** 走 `AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC`（按关键帧对齐），界面位置按"已播帧数"折算；
+- **播完不自动下一首**（"播什么"是模块 1 的决策，不归播放器）；
+- **FLAC/APE 等高码率**：平台解码器支持面取决于系统（Android 自带 FLAC/ALAC 软解，APE 一般不支持）→ 那种文件才需要 FFmpeg。
 
 ---
 
@@ -127,7 +154,7 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 
 | # | 缺口 | 影响 | 工作量估计 |
 |---|---|---|---|
-| 1 | 播放链路：FFmpeg 解码 / SpeexDSP 重采样 / AAudio 出声，全是 stub | **能搜不能放**，这是最大的洞 | 3~5 天 |
+| 1 | ~~播放链路~~ → **已通最小闭环**（平台解码 + AAudio 出声，见 §2.6）；缺 [14] 重采样 / [17] DSP / FFmpeg 后端 | 已经能放歌，音效链还没接 | 2~3 天 |
 | 2 | 搜歌结果没接回 UI（Go → TS 清洗 → JSB → 列表） | 搜索结果上不了屏 | 1~2 天 |
 | 3 | `third_party/` 真实二进制（FFmpeg/SpeexDSP/Eigen/WasmEdge/SQLite/ORT） | 同上，纯 stub | 2~3 天 |
 | 4 | Rive 资源 `.riv` 未做 | 动画走降级绘制（一条淡线） | 美术活 |
@@ -136,7 +163,7 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 
 ---
 
-## 6. 坑台账（27 条，全在 `docs/BLUEPRINT.md` §三）
+## 6. 坑台账（29 条，全在 `docs/BLUEPRINT.md` §三）
 
 最值钱的六条（都是"编译绿、装机黑"类型）：
 
@@ -146,6 +173,10 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 4. `strstr` 扫无 `\0` 结尾的缓冲区 → 越界，导致"导入失败"
 5. Gradle 8：`plugins {}` 之前不许有别的语句 → 签名块必须插在 `plugins{}` 之后
 6. YAML `run:` 单行标量 + 缩进行 → 两行被折叠成一条命令（`chmod: cannot access 'chmod'`）
+7. **release 包没有 INTERNET 权限** → 装机后所有网络静默失败（直链放不出来、Lua `http_get` 返回空）。
+   `flutter create` 只给 debug/profile 壳子加，已由 `app/patch_manifest.mjs` 注入（踩过一次）
+8. **AAudio 独占模式真机常被拒** → 必须按 独占+burst → 独占 → 共享+burst → 共享 四级降级，
+   一上来就死等于装机无声；另外 `AMediaCodec` 的 `pcm-encoding` 只有在 `OUTPUT_FORMAT_CHANGED` 后才可信
 
 ---
 

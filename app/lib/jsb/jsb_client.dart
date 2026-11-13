@@ -81,6 +81,14 @@ typedef _IsPublicDart = int Function();
 typedef _ShutdownNative = Void Function();
 typedef _ShutdownDart = void Function();
 
+typedef _UrlIntNative = Int32 Function(Pointer<Utf8>);
+typedef _UrlIntDart = int Function(Pointer<Utf8>);
+typedef _I64IntNative = Int32 Function(Int64);
+typedef _I64IntDart = int Function(int);
+typedef _VoidVoidNative = Void Function();
+typedef _VoidVoidDart = void Function();
+typedef _FloatVoidNative = Void Function(Float);
+typedef _FloatVoidDart = void Function(double);
 class JsbClient {
   JsbClient._();
 
@@ -107,6 +115,21 @@ class JsbClient {
       _lib.lookupFunction<_ReloadNative, _ReloadDart>('Yieyu_ReloadScripts');
   late final _ImportDart _import =
       _lib.lookupFunction<_ImportNative, _ImportDart>('Yieyu_ImportScript');
+
+  // ── 播放控制（能放歌的最小闭环：URI → 解码 → AAudio）─────────────
+  // 注意：playUrl 只是**异步受理**，返回 0 不代表已经出声。
+  late final _UrlIntDart _playUrl =
+      _lib.lookupFunction<_UrlIntNative, _UrlIntDart>('Yieyu_PlayUrl');
+  late final _VoidVoidDart _pause =
+      _lib.lookupFunction<_VoidVoidNative, _VoidVoidDart>('Yieyu_Pause');
+  late final _VoidVoidDart _resume =
+      _lib.lookupFunction<_VoidVoidNative, _VoidVoidDart>('Yieyu_Resume');
+  late final _VoidVoidDart _stop =
+      _lib.lookupFunction<_VoidVoidNative, _VoidVoidDart>('Yieyu_Stop');
+  late final _I64IntDart _seek =
+      _lib.lookupFunction<_I64IntNative, _I64IntDart>('Yieyu_SeekMs');
+  late final _FloatVoidDart _setVolume =
+      _lib.lookupFunction<_FloatVoidNative, _FloatVoidDart>('Yieyu_SetVolume');
   late final _IsPublicDart _logIsPublic =
       _lib.lookupFunction<_IsPublicNative, _IsPublicDart>('Yieyu_LogIsPublic');
 
@@ -225,6 +248,40 @@ class JsbClient {
     }
   }
 
+  // ── 播放控制 ────────────────────────────────────────────────────
+  /// 播放一个音频直链或本地路径。0=已受理；<0=参数错；核心没起来时 -1。
+  int playUrl(String uri) {
+    final p = uri.toNativeUtf8();
+    try {
+      return _playUrl(p);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  void pause() {
+    try { _pause(); } catch (_) {}
+  }
+
+  void resume() {
+    try { _resume(); } catch (_) {}
+  }
+
+  void stop() {
+    try { _stop(); } catch (_) {}
+  }
+
+  /// 跳转到 ms 位置。0=已受理。
+  int seekMs(int ms) {
+    try { return _seek(ms); } catch (_) { return -1; }
+  }
+
+  /// 音量 0..1。
+  void setVolume(double v) {
+    try { _setVolume(v.clamp(0.0, 1.0)); } catch (_) {}
+  }
   /// 日志是否真的写进了公共目录（/storage/emulated/0/yieyu）
   bool get logIsPublic {
     try {
