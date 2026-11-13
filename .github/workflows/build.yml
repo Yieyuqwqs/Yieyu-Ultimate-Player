@@ -139,7 +139,17 @@ jobs:
         if: inputs.force
         run: rm -rf out && echo "已清空 out/"
 
-      # JDK 17 用 runner 预装的（不再 setup-java 下载）
+      # JDK 17 用 runner 预装的（不再 setup-java 下载）；必须显式指 JAVA_HOME，
+      # 否则默认 JDK 太新，Flutter 模板自带的 Gradle 版本起不来（#77 就是这么红的）
+      - name: 7. JAVA_HOME（用预装 JDK，不下载）
+        run: |
+          ls /usr/lib/jvm || true
+          CAND=$(ls -d /usr/lib/jvm/*17* 2>/dev/null | head -1)
+          if [ -z "$CAND" ]; then CAND=$(ls -d /usr/lib/jvm/*21* 2>/dev/null | head -1); fi
+          if [ -z "$CAND" ]; then CAND=$(ls -d /usr/lib/jvm/* 2>/dev/null | head -1); fi
+          echo "JAVA_HOME=$CAND" >> $GITHUB_ENV
+          echo "用 JDK: $CAND"
+          "$CAND/bin/java" -version || true
 
       # Go 用 runner 预装的（不再 setup-go 下载）
 
