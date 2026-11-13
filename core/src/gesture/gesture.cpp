@@ -33,11 +33,17 @@ void emit(int code) {
 }
 }  // namespace
 
+#if defined(__GNUC__) || defined(__clang__)
+#define YP_EXPORT __attribute__((visibility("default")))   // 全库 -fvisibility=hidden，导出必须显式标
+#else
+#define YP_EXPORT
+#endif
+
 extern "C" {
 
-int gesture_start(void) { return 0; }
+YP_EXPORT int gesture_start(void) { return 0; }
 
-void gesture_down(uint32_t pointer, float x, float y) {
+YP_EXPORT void gesture_down(uint32_t pointer, float x, float y) {
   std::lock_guard<std::mutex> lk(g_mu);
   (void)pointer;
   g_down = true;
@@ -48,7 +54,7 @@ void gesture_down(uint32_t pointer, float x, float y) {
   g_downMs = nowMs();
 }
 
-void gesture_move(uint32_t pointer, float x, float y) {
+YP_EXPORT void gesture_move(uint32_t pointer, float x, float y) {
   std::lock_guard<std::mutex> lk(g_mu);
   (void)pointer;
   if (!g_down) return;
@@ -56,7 +62,7 @@ void gesture_move(uint32_t pointer, float x, float y) {
   g_dy = y - g_y;
 }
 
-void gesture_up(uint32_t pointer, float x, float y) {
+YP_EXPORT void gesture_up(uint32_t pointer, float x, float y) {
   std::lock_guard<std::mutex> lk(g_mu);
   (void)pointer;
   if (!g_down) return;
@@ -87,7 +93,7 @@ void gesture_up(uint32_t pointer, float x, float y) {
   emit(0);
 }
 
-int gesture_poll(void) {
+YP_EXPORT int gesture_poll(void) {
   std::lock_guard<std::mutex> lk(g_mu);
   if (!g_hasEvent) return 0;
   g_hasEvent = false;
@@ -96,6 +102,6 @@ int gesture_poll(void) {
   return r;
 }
 
-int gesture_alive(void) { return 1; }
+YP_EXPORT int gesture_alive(void) { return 1; }
 
 }  // extern "C"

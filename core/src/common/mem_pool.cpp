@@ -31,9 +31,15 @@ int classOf(size_t n) {
 }
 }  // namespace
 
+#if defined(__GNUC__) || defined(__clang__)
+#define YP_EXPORT __attribute__((visibility("default")))   // 全库 -fvisibility=hidden，导出必须显式标
+#else
+#define YP_EXPORT
+#endif
+
 extern "C" {
 
-int yieyu_mem_init(unsigned int blocksPerClass) {
+YP_EXPORT int yieyu_mem_init(unsigned int blocksPerClass) {
   std::lock_guard<std::mutex> lk(g_mu);
   if (g_pool) return 0;
   if (blocksPerClass == 0 || blocksPerClass > 4096) blocksPerClass = 512;
@@ -60,7 +66,7 @@ int yieyu_mem_init(unsigned int blocksPerClass) {
   return 0;
 }
 
-void* yieyu_mem_alloc(size_t size) {
+YP_EXPORT void* yieyu_mem_alloc(size_t size) {
   const int cls = classOf(size);
   if (cls < 0) return nullptr;
   std::lock_guard<std::mutex> lk(g_mu);
@@ -71,7 +77,7 @@ void* yieyu_mem_alloc(size_t size) {
   return (void*)((uint8_t*)b + sizeof(Block));
 }
 
-void yieyu_mem_free(void* p, size_t size) {
+YP_EXPORT void yieyu_mem_free(void* p, size_t size) {
   if (!p) return;
   const int cls = classOf(size);
   if (cls < 0) return;
@@ -83,12 +89,12 @@ void yieyu_mem_free(void* p, size_t size) {
   if (g_used) --g_used;
 }
 
-int yieyu_mem_alive(void) {
+YP_EXPORT int yieyu_mem_alive(void) {
   std::lock_guard<std::mutex> lk(g_mu);
   return g_pool ? 1 : 0;
 }
 
-size_t yieyu_mem_used(void) {
+YP_EXPORT size_t yieyu_mem_used(void) {
   std::lock_guard<std::mutex> lk(g_mu);
   return g_used;
 }
