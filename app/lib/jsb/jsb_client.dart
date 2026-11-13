@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
@@ -105,6 +106,11 @@ typedef _IntFloatVoidDart = void Function(int, double);
 typedef _ToneVoidNative = Void Function(Int32, Int32, Int32, Float);
 typedef _ToneVoidDart = void Function(int, int, int, double);
 typedef _StatsDart = void Function(Pointer<Utf8>, int);
+// [5] 搜歌 / 点歌
+typedef _SearchNative = Int32 Function(Pointer<Utf8>);
+typedef _SearchDart = int Function(Pointer<Utf8>);
+typedef _PlaySongNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _PlaySongDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 class JsbClient {
   JsbClient._();
 
@@ -162,12 +168,19 @@ class JsbClient {
       _lib.lookupFunction<_FloatVoidNative, _FloatVoidDart>('Yieyu_SetVolume');
   late final _IsPublicDart _logIsPublic =
       _lib.lookupFunction<_IsPublicNative, _IsPublicDart>('Yieyu_LogIsPublic');
+  // ── [5] 搜歌 / 点歌（真实网络在 Go 里，结果走事件通道回来）──────────
+  late final _SearchDart _searchFn =
+      _lib.lookupFunction<_SearchNative, _SearchDart>('Yieyu_Search');
+  late final _PlaySongDart _playSongFn =
+      _lib.lookupFunction<_PlaySongNative, _PlaySongDart>('Yieyu_PlaySong');
 
   final _snapCtrl = StreamController<YieyuSnapshot>.broadcast();
   final _songCtrl = StreamController<List<Map<String, Object?>>>.broadcast();
+  final _msgCtrl = StreamController<String>.broadcast();   // 搜索进度/失败原因（只给界面说人话）
 
   Stream<YieyuSnapshot> get snapshots => _snapCtrl.stream;
   Stream<List<Map<String, Object?>>> get songs => _songCtrl.stream;
+  Stream<String> get messages => _msgCtrl.stream;
 
   Timer? _timer;
   Pointer<_CSnapshot>? _snapPtr;
@@ -221,12 +234,35 @@ class JsbClient {
       ));
     }
 
-    // ② 事件环：FlatBuffers 事件流（搜索结果 / 错误 / 授权状态）
+    // ② 事件帧：'S'=搜索结果 JSON / 'E'=错误文案
+    //    帧格式 [0]=类型 [1..4]=小端长度 [5..]=UTF-8（与 core/src/pipeline/engine.cpp 一致）
     final ep = _evtPtr!;
     final got = _poll(ep, _evtCap);
-    if (got > 0) {
-      // TODO(P1)：flatc 生成的事件解码器接进来（lib/jsb/jsb_ops.dart）
-      // 骨架期只保证字节到了 Dart 侧，不解码也不崩。
+    if (got < 5) return;
+    final view = ep.asTypedList(got);
+    final type = view[0];
+    final len = view[1] | (view[2] << 8) | (view[3] << 16) | (view[4] << 24);
+    if (len <= 0 || 5 + len > got) return;
+    final payload = utf8.decode(view.sublist(5, 5 + len), allowMalformed: true);
+
+    if (type == 0x53) {
+      // 'S'：搜索结果（JSON 数组）
+      try {
+        final raw = jsonDecode(payload);
+        final list = <Map<String, Object?>>[];
+        if (raw is List) {
+          for (final e in raw) {
+            if (e is Map) list.add(Map<String, Object?>.from(e));
+          }
+        }
+        _songCtrl.add(list);
+        _msgCtrl.add(list.isEmpty ? '没搜到，换个关键词试试' : '找到 ${list.length} 首');
+      } catch (_) {
+        _msgCtrl.add('结果解析失败');
+      }
+    } else if (type == 0x45) {
+      // 'E'：错误文案（只进开发者面板/状态行，不进正常 UI 的错误弹窗）
+      _msgCtrl.add('搜索失败');
     }
   }
 
@@ -275,6 +311,35 @@ class JsbClient {
     } finally {
       malloc.free(a);
       malloc.free(b);
+    }
+  }
+
+  // ── [5] 搜歌 / 点歌 ─────────────────────────────────────────────
+  /// 搜歌：0=已受理，结果从 [songs] 流回来（真网络，在 Go 的线程里跑）。
+  int search(String keyword) {
+    final p = keyword.toNativeUtf8();
+    try {
+      return _searchFn(p);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  /// 点歌：source/id/mid 来自搜索结果。直链解析在解码线程，返回 0 只代表受理。
+  int playSong(String source, String musicId, String mid) {
+    final a = source.toNativeUtf8();
+    final b = musicId.toNativeUtf8();
+    final c = mid.toNativeUtf8();
+    try {
+      return _playSongFn(a, b, c);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+      malloc.free(c);
     }
   }
 

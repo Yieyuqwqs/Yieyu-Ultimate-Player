@@ -74,6 +74,19 @@ YIEYU_API void Yieyu_SetDsp(int on);                        // 1=EQ+胆机/黑�
 YIEYU_API void Yieyu_SetEqGain(int band, float db);         // band 0..30，±24 dB
 YIEYU_API void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive);
 
+// ⑨ [5] 搜歌（真实网络，走 Go 编的 libyieyu_fetch.so）。
+//    0=已受理（异步，网络在独立线程）；结果从 Yieyu_Poll 取：
+//      事件帧 = [0] 类型 'S'=结果JSON数组 / 'E'=错误文案
+//               [1..4] 小端 uint32 载荷长度
+//               [5..]  UTF-8 载荷
+//    搜索结果元素：{"id":"95328","mid":"002K6...","name":"晴天","artist":"周杰伦",
+//                  "album":"叶惠美","source":"wy"}
+YIEYU_API int Yieyu_Search(const char* keyword);
+
+// ⑩ [5] 点歌：把 (source, musicId, mid) 交给播放器，直链解析在解码线程做（控制面不等网络）。
+//    0=已受理；<0=参数错。失败原因进 Yieyu_LastError()。
+YIEYU_API int Yieyu_PlaySong(const char* source, const char* musicId, const char* mid);
+
 // ── 模块 7 热更：脚本导入（不打包、不重启，秒生效）─────────────────
 // 扫描 /storage/emulated/0/yieyu/scripts/*.lua，黑名单校验后加载。
 // loaded/rejected 可传 NULL。返回 0=完成。

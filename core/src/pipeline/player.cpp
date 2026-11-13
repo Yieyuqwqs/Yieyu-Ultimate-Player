@@ -9,6 +9,8 @@
 #include "../audio/demux_platform.h"
 #include "../dsp/dsp.h"
 #include "../common/log.h"
+#include "../common/blackbox.h"
+#include "../net/song_uri.h"   // yieyu://song?... → 真直链
 
 namespace yieyu {
 namespace {
@@ -193,15 +195,31 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   playedFrames_.store(0);
   durationMs_.store(0);
   seekReqMs_.store(-1);
+  wfail_.store(0, std::memory_order_relaxed);
+  chunks_.store(0, std::memory_order_relaxed);
+
+  // 内部 URI（yieyu://song?source=..&id=..）在这里换成真直链。
+  // 网络往返发生在**解码线程**，控制面不等；失败原因直接进 LastError 给面板。
+  char target[2048];
+  if (yieyu_resolve_uri(uri.c_str(), target, sizeof(target)) != 0) {
+    const char* why = yieyu_song_last_error();
+    LOGE("[9] 直链解析失败：%s（%.120s）", why ? why : "?", uri.c_str());
+    {
+      std::lock_guard<std::mutex> lk(errMu_);
+      std::snprintf(err_, sizeof(err_), "[9] 换不到播放地址：%s", why && *why ? why : "网络/接口失败");
+    }
+    state_.store(kError);
+    return;
+  }
 
   int32_t rate = 48000, ch = 2;
   int64_t durUs = 0;
-  const int rc = yieyu_pdec_open(uri.c_str(), &rate, &ch, &durUs);
+  const int rc = yieyu_pdec_open(target, &rate, &ch, &durUs);
   if (rc != 0) {
-    LOGE("[13] 打开音频失败 rc=%d uri=%.180s", rc, uri.c_str());
+    LOGE("[13] 打开音频失败 rc=%d uri=%.180s", rc, target);
     {
       std::lock_guard<std::mutex> lk(errMu_);
-      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d（%.120s）", rc, uri.c_str());
+      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d（%.120s）", rc, target);
     }
     state_.store(kError);
     return;
@@ -245,8 +263,10 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     // ③ seek 请求
     const int64_t reqMs = seekReqMs_.exchange(-1, std::memory_order_relaxed);
     if (reqMs >= 0) { DoSeek(reqMs); continue; }
-    // ④ 背压：环里够多就等
+    // ④ 背压：环里够多就等；空间不够一整块就先不解（否则会写出半块 → 左右声道错位）
     if (ring_->readable() > kBacklog) { sleep_ms(3); continue; }
+    const size_t want = (size_t)kChunkFrames * 2;
+    if (ring_->writable() < want) { sleep_ms(2); continue; }
     // ⑤ 解一块
     const int n = yieyu_pdec_read(g_scratch, kChunkFrames);
     if (n > 0) {
@@ -256,7 +276,15 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
         tube_vinyl_process(g_scratch, n);
         hrtf8d_process(g_scratch, n, rate_.load(std::memory_order_relaxed));
       }
-      ring_->write(g_scratch, (size_t)n * 2);
+      const size_t put = ring_->write(g_scratch, (size_t)n * 2);
+      const size_t expect = (size_t)n * 2;
+      if (put != expect) {
+        // 这里永远不该发生（前面已经确认过空间）。真发生了就是环又坏了：计数、记黑匣子，别静默。
+        wfail_.fetch_add(1, std::memory_order_relaxed);
+        bb_write(YIEYU_LOG_ERROR, "[13] PCM 环写入不全 put=%zu/%zu（环故障）", put, expect);
+      } else {
+        chunks_.fetch_add(1, std::memory_order_relaxed);
+      }
       continue;
     }
     if (yieyu_pdec_eos()) {

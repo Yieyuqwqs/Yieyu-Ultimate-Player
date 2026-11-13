@@ -83,15 +83,16 @@ class _SettingsPageState extends State<SettingsPage> {
         await BootLog.instance.write('importScript 失败 rc=$rc name=${f.name} size=${bytes.length}');
       }
       setState(() => _busy = false);
-      switch (rc) {
-        case 0:
-          _toast('脚本导入成功，已就绪');
-        case -2:
-          _toast('该脚本包含不被允许的操作，已拒绝');
-        case -4:
-          _toast('脚本太大了（上限 512KB）');
-        default:
-          _toast('脚本导入失败，请重试');
+      // ★ 这里原来是 switch 且四个 case 都没 break：Dart 会直落，
+      //   成功也会连着弹到最后一句"脚本导入失败"，看起来永远导不进去。改成互斥分支。
+      if (rc == 0) {
+        _toast('脚本导入成功，已就绪');
+      } else if (rc == -2) {
+        _toast('该脚本包含不被允许的操作，已拒绝');
+      } else if (rc == -4) {
+        _toast('脚本太大了（上限 512KB）');
+      } else {
+        _toast('脚本导入失败，请重试');
       }
     } catch (e) {
       await _diag('importScript 异常: $e');

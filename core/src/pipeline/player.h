@@ -51,6 +51,14 @@ class Player {
   // 最近一次播放失败的原因（只在开发者面板显示，正常界面静默）
   void LastError(char* out, size_t cap) const;
 
+  // ── 链路诊断（开发者面板的「内存/环」一行靠它）────────────────────
+  // 环里还有多少 float 没播出去、总容量、生产者写不进去的次数。
+  // 三个指标一起看：水位一直贴满 = 解码跟不上/消费者停了；wfail>0 = 环又坏了。
+  size_t  RingReadable() const { return ring_->readable(); }
+  size_t  RingCapacity() const { return ring_->capacity(); }
+  int32_t RingWriteFails() const { return wfail_.load(std::memory_order_relaxed); }
+  int64_t DecodedChunks() const { return chunks_.load(std::memory_order_relaxed); }
+
  private:
   Player();
   ~Player();
@@ -82,6 +90,8 @@ class Player {
   std::atomic<float>   peakR_{0.0f};
   std::atomic<bool>    sinkUp_{false};
   std::atomic<bool>    dspOn_{false};   // [17] 默认旁路
+  std::atomic<int32_t> wfail_{0};       // 生产者写不进环的次数（>0 就是链路故障）
+  std::atomic<int64_t> chunks_{0};      // 解码线程成功产出的块数（活性指标）
   mutable std::mutex   errMu_;
   char                 err_[256] = {0};
 };

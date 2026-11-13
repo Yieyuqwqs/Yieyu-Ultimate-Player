@@ -85,6 +85,26 @@ void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive) {
   if (g_inited.load()) yieyu::Engine::Instance().SetTone(tube != 0, vinyl != 0, lpf != 0, drive);
 }
 
+// ── ⑨ [5] 搜歌：只投递关键字，网络在引擎的搜歌线程里跑 ─────────────
+int Yieyu_Search(const char* keyword) {
+  if (!g_inited.load()) { set_err("核心未初始化，搜索不可用"); return -1; }
+  if (!keyword || !*keyword) { set_err("搜索关键字为空"); return -1; }
+  const int rc = yieyu::Engine::Instance().Search(keyword);
+  if (rc != 0) set_err("搜索请求受理失败 rc=%d", rc);
+  else set_err("");
+  return rc;
+}
+
+// ── ⑩ [5] 点歌：拼内部 URI，直链解析交给解码线程 ─────────────────────
+int Yieyu_PlaySong(const char* source, const char* musicId, const char* mid) {
+  if (!g_inited.load()) return -1;
+  bb_new_trace();
+  const int rc = yieyu::Engine::Instance().PlaySong(source, musicId, mid);
+  if (rc != 0) set_err("点歌受理失败 rc=%d", rc);
+  else set_err("");
+  return rc;
+}
+
 int  Yieyu_Service_Ping(void) { return g_inited.load() ? 1 : 0; }
 void Yieyu_Service_OnNotificationAction(int actionId) {
   yieyu::Engine::Instance().OnSystemAction(actionId);

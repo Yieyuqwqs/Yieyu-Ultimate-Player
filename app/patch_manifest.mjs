@@ -25,5 +25,11 @@ for (const p of perms) {
   xml = xml.replace('    <application', tag + '    <application')
   added++
 }
-if (added) { fs.writeFileSync(man, xml); console.log(`  manifest 注入 ${added} 个权限`) }
+// ★ 音源直链是 http://（网易/QQ 的 CDN 都不走 https）。targetSdk ≥ 28 默认禁明文，
+//   不打开这个开关，MediaExtractor 拉流会直接被网络策略拒掉 —— 表现就是"点了没声音"。
+if (!xml.includes('usesCleartextTraffic')) {
+  xml = xml.replace('<application', '<application android:usesCleartextTraffic="true"');
+  added++
+}
+if (added) { fs.writeFileSync(man, xml); console.log(`  manifest 注入 ${added} 项`) }
 else console.log('  manifest 权限已就绪')
