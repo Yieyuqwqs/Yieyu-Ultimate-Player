@@ -44,23 +44,6 @@ const STEPS = [
     cmd: () => ['node', 'tools/verify-idl.mjs'],
     out: ['idl'], inputs: ['idl', 'tools/verify-idl.mjs'] },
 
-  { id: 'zig', deps: ['doctor'], bin: 'zig', desc: '模块4 分配器静态库',
-    cmd: () => ['zig', 'build', '-Dtarget=aarch64-linux-android', '-Doptimize=ReleaseFast', '--prefix', at('zig')],
-    cwd: 'zig', out: ['zig'], inputs: ['zig'] },
-
-  { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so', cwd: 'rust',
-    // ★ 以前只跑 cargo，产物留在 rust/target/ 没人搬 → CMake 永远"缺库 → 走空实现"，
-    //   三个 Rust 模块一次都没进过 APK。编译完必须落位到 out/rust/。
-    //   （不在这里往 core 静态链：Rust cdylib 没有 SONAME，链进去会把绝对路径写进
-    //    DT_NEEDED，装机 dlopen 必炸 —— 改为运行时 dlopen，见 engine.cpp。）
-    cmd: () => ['bash', '-c',
-      'set -e; ' +
-      'cargo build --release --target aarch64-linux-android; ' +
-      'dst="$YIEYU_OUT/rust/aarch64-linux-android/release"; mkdir -p "$dst"; ' +
-      'for n in yieyu_gesture yieyu_license yieyu_store; do ' +
-      '  cp -fv "target/aarch64-linux-android/release/lib$n.so" "$dst/"; done'],
-    env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['rust'], inputs: ['rust'] },
-
   { id: 'go', deps: ['doctor'], bin: 'go', desc: '模块5/9 C ABI 取流库（Go + TLS）',
     cmd: () => ['bash', 'build.sh'],
     cwd: 'go', env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, ANDROID_HOME: process.env.ANDROID_HOME || '', ANDROID_SDK_ROOT: process.env.ANDROID_SDK_ROOT || '' }), out: ['go'], inputs: ['go'] },
@@ -78,9 +61,9 @@ const STEPS = [
   { id: 'lua', deps: ['doctor'], bin: 'node', desc: '模块7 音源脚本资源收集',
     cmd: () => ['node', 'tools/collect-lua.mjs'], out: ['lua'], inputs: ['lua'] },
 
-  { id: 'native', deps: ['idl', 'zig', 'rust', 'go'], bin: 'cmake', desc: '模块7/8/9/12/13/14/15/16/17/18/20/21/23/24 → libyieyu_core.so',
+  { id: 'native', deps: ['idl', 'go'], bin: 'cmake', desc: '模块7/8/9/12/13/14/15/16/17/18/20/21/23/24 → libyieyu_core.so',
     cmd: () => ['bash', 'core/build-native.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, YIEYU_OFFLINE_ASSETS: OFFLINE ? 'ON' : 'OFF' }),
-    out: ['native'], inputs: ['core', 'idl', 'out/go', 'out/rust'] },
+    out: ['native'], inputs: ['core', 'idl', 'out/go'] },
 
   { id: 'obfuscate', deps: ['native'], bin: 'node', desc: '模块11 链接后混淆 + 自校验摘要',
     cmd: () => ['node', 'tools/obfuscate.mjs'], out: ['obfuscate'], inputs: ['out/native/arm64'] },

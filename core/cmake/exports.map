@@ -22,6 +22,10 @@
     Yieyu_ExportLogs; Yieyu_LogDir; Yieyu_LogIsPublic; Yieyu_SetTrace;
     /* [7] 脚本热更 */
     Yieyu_ReloadScripts; Yieyu_ImportScript; Yieyu_ScriptCall;
+    /* [3] 手势状态机（Dart 直接 lookup，不再单独一个 .so） */
+    gesture_start; gesture_poll; gesture_down; gesture_move; gesture_up; gesture_alive;
+    /* [4] 定长池自检 */
+    yieyu_mem_init; yieyu_mem_alloc; yieyu_mem_free; yieyu_mem_alive; yieyu_mem_used;
     /* [22] 唯一 JNI 面：Kotlin 前台服务（只有 2 个） */
     Java_com_yieyu_ultimate_service_PlaybackService_*;
   local: *;

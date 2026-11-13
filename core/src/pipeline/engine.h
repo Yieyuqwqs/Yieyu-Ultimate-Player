@@ -85,7 +85,6 @@ class Engine {
   std::unique_ptr<ByteRing> byteRing_;
 
   // [19] 只读库句柄（dlopen 常驻；缺库只是少一个视角，不影响播放）
-  void* storeLib_ = nullptr;
   std::atomic<int> storeEntries_{-1};
 
   // [20] 会话缓存（避免每次 SetVolume 都写盘）

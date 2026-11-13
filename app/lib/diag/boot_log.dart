@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../platform/native_channel.dart';
 
 /// 【诊断】Flutter 侧启动日志。
 ///
@@ -17,8 +17,8 @@ class BootLog {
 
   Future<File> _ensure() async {
     if (_file != null) return _file!;
-    final dir = await getApplicationSupportDirectory();
-    final f = File('${dir.path}/yieyu_boot.log');
+    final dir = await NativeChannel.appDir() ?? '.';
+    final f = File('${dir}/yieyu_boot.log');
     _file = f;
     return f;
   }
@@ -51,7 +51,7 @@ class BootLog {
       if (!await f.exists()) return false;
       final dst = Directory(dirPath);
       if (!await dst.exists()) await dst.create(recursive: true);
-      await f.copy('${dst.path}/yieyu_boot.log');
+      await f.copy('${dst}/yieyu_boot.log');
       return true;
     } catch (_) {
       return false;

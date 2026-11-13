@@ -24,7 +24,8 @@ class GestureBridge {
     if (_tried) return available;
     _tried = true;
     try {
-      final lib = DynamicLibrary.open('libyieyu_gesture.so');
+      // 手势状态机现在编在 libyieyu_core.so 里（不再单独一个 Rust .so）
+      final lib = DynamicLibrary.open('libyieyu_core.so');
       _lib = lib;
       _start = lib.lookupFunction<Int32 Function(), int Function()>('gesture_start');
       _poll = lib.lookupFunction<Int32 Function(), int Function()>('gesture_poll');

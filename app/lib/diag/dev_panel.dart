@@ -4,9 +4,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
+import '../platform/native_channel.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../jsb/jsb_client.dart';
 import 'boot_log.dart';
@@ -88,7 +87,7 @@ class _DevPanelState extends State<DevPanel> {
   Future<void> _playTestTone() async {
     setState(() => _hint = '正在生成测试音…');
     try {
-      final dir = await getApplicationSupportDirectory();
+      final dir = await NativeChannel.appDir() ?? '.';
       final f = File('${dir.path}/test440.wav');
       // 每次都重写：避免旧版本留下的半截文件把这条唯一的"听声"通道带偏
       await f.writeAsBytes(_wavTone(440.0, 3.0, 44100), flush: true);
@@ -163,22 +162,25 @@ class _DevPanelState extends State<DevPanel> {
     }
   }
 
-  /// [18] 选一个 WAV → 送到原生离线跑一遍中置抑制 → 生成 _karaoke.wav
+  /// [18] 选一个 WAV → 送到原生离线跑一遍中置抑制 → 生成伴奏
   Future<void> _makeKaraoke() async {
     setState(() => _hint = '正在打开文件选择器…');
     try {
-      final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
-      if (picked == null || picked.files.isEmpty) { setState(() => _hint = '已取消'); return; }
-      final f = picked.files.single;
-      var bytes = f.bytes;
-      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
-      if (bytes == null) { setState(() => _hint = '读不到文件内容'); return; }
-      final dir = await getTemporaryDirectory();
+      final picked = await NativeChannel.pickFile();
+      if (picked == null) {
+        setState(() => _hint = '已取消');
+        return;
+      }
+      final dirPath = await NativeChannel.appDir() ?? '.';
+      final dir = Directory(dirPath);
       final src = File('${dir.path}/karaoke_src.wav');
-      await src.writeAsBytes(bytes, flush: true);
+      await src.writeAsBytes(picked.bytes, flush: true);
       final dst = '${dir.path}/karaoke_out.wav';
       final rc = JsbClient.instance.makeKaraoke(src.path, dst);
-      if (rc != 0) { setState(() => _hint = '没能受理（$rc）'); return; }
+      if (rc != 0) {
+        setState(() => _hint = '没能受理（$rc）');
+        return;
+      }
       setState(() => _hint = '正在生成伴奏（离屏跑，几十秒）…');
       for (var i = 0; i < 240; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -205,27 +207,16 @@ class _DevPanelState extends State<DevPanel> {
   Future<void> _pickAndPlay() async {
     setState(() => _hint = '正在打开文件选择器…');
     try {
-      final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
-      if (picked == null || picked.files.isEmpty) {
+      final picked = await NativeChannel.pickFile();
+      if (picked == null) {
         setState(() => _hint = '已取消');
         return;
       }
-      final f = picked.files.single;
-      var bytes = f.bytes;
-      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
-      if (bytes == null) {
-        setState(() => _hint = '读不到文件内容');
-        await _diag('选本地音频：读到空内容 name=${f.name}');
-        return;
-      }
-      final dir = await getTemporaryDirectory();
-      // ★ 必须保留原扩展名：MediaExtractor 靠它选解封装器。
-      //   上一版存成 picked_<ts>.bin，扩展名被吃掉 → setDataSource 直接 rc=-3（"打不开音频"）。
-      var base = f.name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      final dirPath = await NativeChannel.appDir() ?? '.';
+      var base = picked.name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
       if (base.isEmpty) base = 'picked.audio';
-      final out = File('${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$base');
-      await out.writeAsBytes(bytes, flush: true);
-      // 落盘字节数也要显示：如果是 0，说明选择器给了空内容，跟解码器无关
+      final out = File('$dirPath/picked_${DateTime.now().millisecondsSinceEpoch}_$base');
+      await out.writeAsBytes(picked.bytes, flush: true);
       final long = await out.length();
       final rc = JsbClient.instance.playUrl(out.path);
       setState(() {
@@ -233,14 +224,13 @@ class _DevPanelState extends State<DevPanel> {
         _urlCtrl.text = out.path;
       });
       if (rc == 0) await _reportPlayFailure();
-      await _diag('选本地音频 name=${f.name} size=${bytes.length} rc=$rc path=${out.path}');
+      await _diag('选本地音频 name=${picked.name} size=${picked.bytes.length} rc=$rc path=${out.path}');
     } catch (e) {
       setState(() => _hint = '选择/写入失败');
       await _diag('选本地音频异常 $e');
     }
   }
 
-  /// 用已导入的脚本取播放地址：证明「导入 → 执行 → 拿到 URL → 出声」整条链通。
   Future<void> _callScript() async {
     final script = _scriptCtrl.text.trim();
     final source = _sourceCtrl.text.trim();

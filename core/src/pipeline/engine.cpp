@@ -31,9 +31,14 @@ void  yieyu_fetch_free(char* p);
 
 // [10] 验签 / [19] 只读库：Rust 编的 cdylib，运行时 dlopen（不做静态链：
 // cdylib 没有 SONAME，链进 core 会把绝对路径写进 DT_NEEDED，装机 dlopen 必炸）。
-#if defined(YIEYU_HAVE_LICENSE) || defined(YIEYU_HAVE_STORE)
-#include <dlfcn.h>
-#endif
+
+// [10]/[19] 树内实现是 C 链接（见 core/src/license、core/src/store）
+extern "C" {
+int  yieyu_license_has_pubkey(void);
+int  yieyu_store_open(const char* path);
+int  yieyu_store_count(void);
+void yieyu_store_close(void);
+}
 
 namespace yieyu {
 
@@ -70,40 +75,11 @@ int Engine::Boot(const char* filesDir, const char* abi) {
     searchKw_.clear();
   }
 
-  // ① [10] 验签：唯一密钥在这里，Kotlin/Dart/Lua 一律不持有。
-  bool licensed = true;
-#ifdef YIEYU_HAVE_LICENSE
+  // ① [10] 验签：零依赖实现直接在树内（yieyu_license_has_pubkey）
   {
-    void* h = dlopen("libyieyu_license.so", RTLD_NOW | RTLD_LOCAL);
-    if (!h) {
-      const char* e = dlerror();
-      lic_.store(-1);
-      bb_write(YIEYU_LOG_ERROR, "[10] dlopen libyieyu_license.so 失败：%s", e ? e : "?");
-    } else {
-      typedef int (*has_pubkey_fn)(void);
-      has_pubkey_fn fn = nullptr;
-      *reinterpret_cast<void**>(&fn) = dlsym(h, "yieyu_license_has_pubkey");
-      if (!fn) {
-        lic_.store(-1);
-        bb_write(YIEYU_LOG_ERROR, "[10] 验签库里没有 yieyu_license_has_pubkey 符号");
-      } else {
-        const int hasKey = fn();
-        lic_.store(hasKey == 1 ? 1 : 0);
-        if (hasKey != 1) {
-          bb_write(YIEYU_LOG_ERROR, "[10] 验签库在，但内嵌公钥缺失（has_pubkey=%d）", hasKey);
-        }
-      }
-      // ★ 故意不 dlclose：验签句柄要活到进程结束
-    }
-  }
-#else
-  lic_.store(-1);
-  bb_write(YIEYU_LOG_ERROR, "[10] 构建期就没有 libyieyu_license.so，验签走空实现");
-#endif
-  if (!licensed) {
-    state_.store(State::kUnlicensed);
-    bb_write(YIEYU_LOG_ERROR, "[10] 验签失败 → 熔断，trace=%s", bb_trace());
-    return 0;
+    const int hasKey = yieyu_license_has_pubkey();
+    lic_.store(hasKey == 1 ? 1 : 0);
+    if (hasKey != 1) bb_write(YIEYU_LOG_ERROR, "[10] 验签密钥缺失（has_pubkey=%d）", hasKey);
   }
 
   // ② [20] 打开本地存储（唯一写者），并恢复上次会话
@@ -131,31 +107,12 @@ int Engine::Boot(const char* filesDir, const char* abi) {
     if (n > 0) { buf[n] = 0; lastUri_.assign(buf, (size_t)n); }
   }
 
-  // ③ [19] 只读库：可选；缺库只是少一个诊断视角，不许影响启动
-#ifdef YIEYU_HAVE_STORE
+  // ③ [19] 只读库：树内实现，直接打开同一个 KV 文件
   {
-    storeLib_ = dlopen("libyieyu_store.so", RTLD_NOW | RTLD_LOCAL);
-    if (storeLib_) {
-      typedef int (*open_fn)(const char*);
-      open_fn op = nullptr;
-      *reinterpret_cast<void**>(&op) = dlsym(storeLib_, "yieyu_store_open");
-      if (op && kv_path() && *kv_path()) {
-        const int rc = op(kv_path());
-        if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[19] 只读库打不开 %s rc=%d", kv_path(), rc);
-        typedef int (*count_fn)(void);
-        count_fn cf = nullptr;
-        *reinterpret_cast<void**>(&cf) = dlsym(storeLib_, "yieyu_store_count");
-        storeEntries_.store(cf ? cf() : -1);
-      }
-    } else {
-      const char* e = dlerror();
-      bb_write(YIEYU_LOG_ERROR, "[19] dlopen libyieyu_store.so 失败：%s", e ? e : "?");
-      storeLib_ = nullptr;
-    }
+    const int rc = yieyu_store_open(kv_path());
+    if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[19] 只读库打不开 %s rc=%d", kv_path(), rc);
+    storeEntries_.store(rc == 0 ? yieyu_store_count() : -1);
   }
-#else
-  storeEntries_.store(-1);
-#endif
 
   // ③.5 [8] wasm 插件：<home>/plugins/*.wasm（没有插件是正常情况，不算错）
   {
@@ -216,17 +173,10 @@ void Engine::Shutdown() {
   Player::Instance().Shutdown();
   gyro_stop();
   SaveSession();                       // [20] 会话落盘（音量 / 音效开关 / 上次曲目）
-#ifdef YIEYU_HAVE_STORE
-  if (storeLib_) {
-    typedef void (*close_fn)(void);
-    close_fn cf = nullptr;
-    *reinterpret_cast<void**>(&cf) = dlsym(storeLib_, "yieyu_store_close");
-    if (cf) cf();
-    dlclose(storeLib_);
-    storeLib_ = nullptr;
-    storeEntries_.store(-1);
+  {
+    yieyu_store_close();
   }
-#endif
+
   kv_close();
   lua_sandbox_shutdown();
   plugin_shutdown();

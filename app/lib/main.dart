@@ -3,7 +3,7 @@ import 'dart:ffi' show Abi;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
-import 'package:path_provider/path_provider.dart';
+import 'platform/native_channel.dart';
 
 import 'diag/boot_log.dart';
 import 'jsb/jsb_client.dart';
@@ -37,8 +37,8 @@ class _BootstrapperState extends State<_Bootstrapper> {
 
   Future<void> _boot() async {
     try {
-      final dir = await getApplicationSupportDirectory();
-      final rc = JsbClient.instance.init(dir.path, Abi.current().toString());
+      final dir = await NativeChannel.appDir() ?? '';
+      final rc = JsbClient.instance.init(dir, Abi.current().toString());
       if (rc != 0) {
         _degraded = true;
         BootLog.instance.write('Yieyu_Init 返回 $rc');

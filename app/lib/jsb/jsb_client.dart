@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
+import 'ffi_shim.dart';
 
 import '../model/song.dart';
 import 'jsb_ops.dart';

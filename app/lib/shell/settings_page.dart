@@ -1,8 +1,7 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
+import '../platform/native_channel.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../diag/boot_log.dart';
 import '../diag/dev_panel.dart';
@@ -53,43 +52,32 @@ class _SettingsPageState extends State<SettingsPage> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        withData: true,
-        allowMultiple: false,
-      );
-      if (picked == null || picked.files.isEmpty) {
-        await _diag('选择器返回空（可能被取消，或 SAF 拿不到该文件）');
+      final picked = await NativeChannel.pickFile();
+      if (picked == null) {
+        await _diag('选择器返回空（取消，或 SAF 拿不到该文件）');
         setState(() => _busy = false);
         return;
       }
-      final f = picked.files.single;
-      if (!f.name.toLowerCase().endsWith('.lua')) {
-        await _diag('名字不是 .lua：${f.name}');
+      if (!picked.name.toLowerCase().endsWith('.lua')) {
+        await _diag('名字不是 .lua：${picked.name}');
         setState(() => _busy = false);
         _toast('请选择 .lua 脚本文件');
         return;
       }
-      var bytes = f.bytes;
-      if (bytes == null && f.path != null) {
-        bytes = await File(f.path!).readAsBytes();
-      }
-      if (bytes == null) {
-        await _diag('读到空内容：${f.name} path=${f.path}');
+      final bytes = picked.bytes;
+      if (bytes.isEmpty) {
+        await _diag('读到空内容：${picked.name}');
         setState(() => _busy = false);
         _toast('读取失败，请重试');
         return;
       }
-
-      final rc = JsbClient.instance.importScript(f.name, bytes) ?? -1;
+      final rc = JsbClient.instance.importScript(picked.name, bytes) ?? -1;
       final why = rc == 0 ? '' : JsbClient.instance.lastError();
-      await _diag('importScript name=${f.name} size=${bytes.length} rc=$rc why=$why');
+      await _diag('importScript name=${picked.name} size=${bytes.length} rc=$rc why=$why');
       if (rc != 0) {
-        await BootLog.instance.write('importScript 失败 rc=$rc name=${f.name} size=${bytes.length}');
+        await BootLog.instance.write('importScript 失败 rc=$rc name=${picked.name} size=${bytes.length}');
       }
       setState(() => _busy = false);
-      // ★ 这里原来是 switch 且四个 case 都没 break：Dart 会直落，
-      //   成功也会连着弹到最后一句"脚本导入失败"，看起来永远导不进去。改成互斥分支。
       if (rc == 0) {
         _toast('脚本导入成功，已就绪');
       } else if (rc == -2) {
@@ -119,10 +107,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!ok) {
       try {
         final dir = JsbClient.instance.logDir();
-        final target = dir.isNotEmpty
-            ? dir
-            : (await getExternalStorageDirectory())?.path ??
-                (await getApplicationSupportDirectory()).path;
+        final target = dir.isNotEmpty ? dir : (await NativeChannel.appDir() ?? '.');
         ok = await BootLog.instance.exportTo(target);
       } catch (_) {
         ok = false;

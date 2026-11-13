@@ -126,6 +126,48 @@ function patchPlatformService() {
   }
 }
 
+// ── [模块1 平台通道] 文件选择 + 应用目录 ────────────────────────────────
+// 为什么自己写：file_picker / path_provider 是第三方 Flutter 插件，各自拖一串
+// transitive 依赖（android SDK 版本、生命周期插件…），我们已经因为它们出现过构建告警/失败。
+// 做法：把 app/platform/main_activity_channel.kt 追加进生成的 MainActivity.kt，
+// 只提供一个 MethodChannel("yieyu/native")：appDir / pickFile。
+function patchPlatformChannel() {
+  let mainKt = null
+  const walk = (d) => {
+    if (!fs.existsSync(d)) return
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name)
+      if (e.isDirectory()) walk(f)
+      else if (e.name === 'MainActivity.kt') mainKt = f
+    }
+  }
+  walk(path.join(androidDir, 'app', 'src', 'main', 'kotlin'))
+  if (!mainKt) { console.log('  ⚠ 没找到 MainActivity.kt，跳过平台通道'); return }
+  let k = fs.readFileSync(mainKt, 'utf8')
+  if (k.includes('setupYieyuChannel')) { console.log('  · 平台通道已在 MainActivity 里'); return }
+
+  const snippetPath = path.join(root, 'platform', 'main_activity_channel.kt')
+  if (!fs.existsSync(snippetPath)) { console.log('  ⚠ 缺 platform/main_activity_channel.kt'); return }
+  const snippet = fs.readFileSync(snippetPath, 'utf8')
+
+  // imports（只加缺的）
+  const wantImports = [
+    'import android.app.Activity',
+    'import android.content.Intent',
+    'import android.net.Uri',
+    'import io.flutter.plugin.common.MethodChannel',
+  ]
+  for (const imp of wantImports) {
+    if (!k.includes(imp)) k = k.replace(/^(package .*\n)/m, '$1\n' + imp + '\n')
+  }
+  // onCreate 里注册
+  k = k.replace(/override fun onCreate\(savedInstanceState: android\.os\.Bundle\?\) \{/,
+    'override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        try { setupYieyuChannel() } catch (_: Throwable) { }')
+  k += '\n' + snippet
+  fs.writeFileSync(mainKt, k)
+  console.log('  ✓ 平台通道已注入 MainActivity（appDir / pickFile）')
+}
+
 function patchSigning() {
   const dir = path.join(androidDir, 'app')
   const p = path.join(dir, 'build.gradle')
@@ -187,3 +229,4 @@ patchBuildGradle()
 patchSigning()
 patchGradleProperties()
 patchPlatformService()
+patchPlatformChannel()

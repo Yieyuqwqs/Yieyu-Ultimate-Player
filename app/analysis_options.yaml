@@ -1,4 +1,4 @@
-include: package:flutter_lints/flutter.yaml
+# lint 规则不再依赖第三方包（flutter_lints 已拔）
 
 analyzer:
   errors:

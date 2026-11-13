@@ -22,7 +22,7 @@ const LIB = path.join(PKG, 'jniLibs/arm64-v8a')
 fs.mkdirSync(LIB, { recursive: true })
 
 const picked = []
-for (const src of [path.join(OUT, 'native/arm64'), path.join(OUT, 'rust')]) {
+for (const src of [path.join(OUT, 'native/arm64'), path.join(OUT, 'go')]) {   // Rust 已下线：只剩 core 与 Go 取流库
   if (!fs.existsSync(src)) continue
   const stack = [src]
   while (stack.length) {

@@ -11,7 +11,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(YIEYU_OFFLINE_ASSETS "没有 third_party 时编空实现，让骨架先过" ON)
 option(YIEYU_OBFUSCATE "模块11 Obfuscator-LLVM 混淆" OFF)
 
 set(YIEYU_OUT "$ENV{YIEYU_OUT}" CACHE PATH "各语言产物落位（out/）")
@@ -19,35 +18,12 @@ if(NOT YIEYU_OUT)
   set(YIEYU_OUT "${CMAKE_CURRENT_SOURCE_DIR}/../out")
 endif()
 set(YIEYU_OUT ${YIEYU_OUT} CACHE PATH "" FORCE)
-message(STATUS "YIEYU_OUT = ${YIEYU_OUT}   offline=${YIEYU_OFFLINE_ASSETS}  obfuscate=${YIEYU_OBFUSCATE}")
+message(STATUS "YIEYU_OUT = ${YIEYU_OUT}   obfuscate=${YIEYU_OBFUSCATE}")
 
 include(cmake/ObfuscatorLLVM.cmake)
 
-# ─── 跨语言产物：全部按 IMPORTED 目标接入，路径约定唯一 ───────────────
-set(_rust "${YIEYU_OUT}/rust/aarch64-linux-android/release")
-foreach(_lib yieyu_license yieyu_store)
-  if(EXISTS "${_rust}/lib${_lib}.so")
-    add_library(${_lib} SHARED IMPORTED)
-    set_target_properties(${_lib} PROPERTIES IMPORTED_LOCATION "${_rust}/lib${_lib}.so")
-    if(_lib STREQUAL "yieyu_license")
-      # 让 C++ 侧知道"可以真调用验签库"，不再硬编码 licensed=true
-      add_compile_definitions(YIEYU_HAVE_LICENSE=1)
-    elseif(_lib STREQUAL "yieyu_store")
-      add_compile_definitions(YIEYU_HAVE_STORE=1)
-    endif()
-  else()
-    message(WARNING "缺 ${_lib}.so（先 ./build.sh rust）→ 该模块走空实现")
-  endif()
-endforeach()
-
-set(_zig "${YIEYU_OUT}/zig/lib/libyieyu_mem.a")
-if(NOT EXISTS "${_zig}")
-  set(_zig "${YIEYU_OUT}/zig/libyieyu_mem.a")
-endif()
-if(EXISTS "${_zig}")
-  # 让 JSB 知道"池子可用"，命令帧才会走 Zig 的 slab
-  add_compile_definitions(YIEYU_HAVE_MEM=1)
-endif()
+# ─── Rust/Zig 已下线：模块 3/4/10/19 全部改成树内 C++ ─────────────────
+add_compile_definitions(YIEYU_HAVE_LICENSE=1 YIEYU_HAVE_STORE=1 YIEYU_HAVE_MEM=1)
 
 # ─── [7] Lua 沙箱：解释器是我们自己的（core/src/script/minilua.cpp），不引 LuaJIT ───
 
@@ -62,24 +38,15 @@ else()
   message(WARNING "[9] 没有 libyieyu_fetch.so → 脚本的 http_get 只会返回空串")
 endif()
 
-# ─── 第三方（见 third_party/README.md）────────────────────────────────
-if(NOT YIEYU_OFFLINE_ASSETS)
-  # [14] SpeexDSP（BSD-3，替代 JUCE）：头文件 + 预编译静态库
-  set(SPEEXDSP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/speexdsp/${ANDROID_ABI}"
-      CACHE PATH "SpeexDSP 预编译根目录")
-  if(EXISTS "${SPEEXDSP_ROOT}/include/speex/speex_resampler.h")
-    include_directories("${SPEEXDSP_ROOT}/include")
-    find_library(SPEEXDSP_LIB NAMES speexdsp HINTS "${SPEEXDSP_ROOT}/lib" REQUIRED)
-  else()
-    message(WARNING "缺 SpeexDSP 预编译 → 模块 14 走旁路（44.1k 直通）")
-  endif()
-endif()
+# 第三方预编译库全部下线（FFmpeg/SpeexDSP/curl/SQLite/WasmEdge/ORT 都改成自研或 NDK 自带）
+
 
 # ─── 源文件：按模块分组，一眼看得见谁是谁 ─────────────────────────────
 set(SRC_COMMON  src/common/blackbox.cpp
                 src/common/app_paths.cpp            # 路径唯一真相
                 src/common/sha256.cpp               # [11] 自校验摘要
-                src/common/integrity.cpp)           # [11] + [12] 常数时间比对
+                src/common/integrity.cpp            # [11] + [12]
+                src/common/mem_pool.cpp)            # [4] 定长池（取代 Zig）
 set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
                 src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
 set(SRC_PIPE    src/pipeline/engine.cpp
@@ -94,7 +61,10 @@ set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
 set(SRC_SENSOR  src/sensor/gyro_asensor.cpp)           # [23]
 set(SRC_NET     src/net/stream_http.c                 # [9] 自研 socket HTTP/1.1
                 src/net/song_uri.cpp)                  # [5]/[9] yieyu://song → 真直链
-set(SRC_STORE   src/store/kv_store.cpp)                # [20] 自研追加日志（唯一写者）
+set(SRC_LICENSE src/license/license.cpp)                # [10] 验签（取代 Rust/ring）
+set(SRC_GESTURE src/gesture/gesture.cpp)                # [3] 手势（取代 Rust/Tokio）
+set(SRC_STORE   src/store/kv_store.cpp                # [20]
+                src/store/store_read.cpp)             # [19] 只读半边（取代 Rust/SQLx）
 set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
 set(SRC_SCRIPT  src/script/lua_sandbox.cpp              # [7] 沙箱（自有解释器）
                 src/script/minilua.cpp)                 # [7] Lua 子集解释器（零依赖）
@@ -104,7 +74,8 @@ set(SRC_AI      src/ai/vocals.cpp)                     # [18] 离线人声消除
 
 add_library(yieyu_core SHARED
   ${SRC_COMMON} ${SRC_JSB} ${SRC_PIPE} ${SRC_AUDIO} ${SRC_DSP}
-  ${SRC_SENSOR} ${SRC_NET} ${SRC_STORE} ${SRC_IPC} ${SRC_SCRIPT} ${SRC_WASM} ${SRC_AI})
+  ${SRC_SENSOR} ${SRC_NET} ${SRC_STORE} ${SRC_IPC} ${SRC_SCRIPT} ${SRC_WASM} ${SRC_AI}
+  ${SRC_LICENSE} ${SRC_GESTURE})
 
 # [12] NEON 汇编只在 arm64 参与
 if(ANDROID_ABI STREQUAL "arm64-v8a" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
@@ -133,19 +104,9 @@ if(ANDROID)
   # [13] 平台解码后端：mediandk 也是 NDK 自带（API 21+），不引入任何第三方 .so
   list(APPEND YIEYU_LIBS mediandk)
 endif()
-if(NOT YIEYU_OFFLINE_ASSETS)
-  list(APPEND YIEYU_LIBS avformat avcodec avutil swresample curl sqlite3 wasmedge)
-  if(SPEEXDSP_LIB)
-    list(APPEND YIEYU_LIBS ${SPEEXDSP_LIB})
-  endif()
-endif()
-# ★ Rust 的 license/store **不做静态链**：cdylib 没有 SONAME，链进来会把绝对路径写进
-#   DT_NEEDED（CI 15.5 就是拦这个，装机 dlopen 必炸）。改为运行时 dlopen，
-#   由 YIEYU_HAVE_LICENSE / YIEYU_HAVE_STORE 控制调用点是否编译（见 engine.cpp）。
-#   文件仍会被 app/build-app.sh 拷进 jniLibs，所以装机后一定找得到。
-if(EXISTS "${_zig}")
-  list(APPEND YIEYU_LIBS "${_zig}")
-endif()
+# （不再链 avformat/avcodec/curl/sqlite3/wasmedge/speexdsp：全部自研）
+
+# Rust 库已不存在：license/store 直接编进 core（见 SRC_LICENSE / SRC_STORE）
 
 if(TARGET yieyu_fetch)
   list(APPEND YIEYU_LIBS yieyu_fetch)
@@ -160,10 +121,6 @@ set_target_properties(yieyu_core PROPERTIES
   VISIBILITY_INLINES_HIDDEN ON)
 
 # ─── 空实现开关：没有第三方时告诉源码"我在裸跑" ───────────────────────
-if(YIEYU_OFFLINE_ASSETS)
-  target_compile_definitions(yieyu_core PRIVATE YIEYU_OFFLINE=1)
-  message(WARNING "YIEYU_OFFLINE=ON：FFmpeg/JUCE/curl/wasmedge 均为空实现，仅验证骨架可编")
-endif()
 
 # ─── 测试 ─────────────────────────────────────────────────────────────
 # 测试只在宿主上跑（Android 交叉编译出来的 executable 没有意义）

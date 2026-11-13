@@ -75,8 +75,6 @@ jobs:
           filters: |
             native:
               - 'core/**'
-              - 'rust/**'
-              - 'zig/**'
               - 'asm/**'
               - 'idl/**'
               - 'tools/orchestrate.mjs'
@@ -93,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: out
-          key: out-v2-${{ hashFiles('core/**','rust/**','zig/**','asm/**','idl/**','go/**','ts/**','wasm/**','app/**','tools/**','build.sh') }}
+          key: out-v2-${{ hashFiles('core/**','asm/**','idl/**','go/**','ts/**','app/**','tools/**','build.sh') }}
           restore-keys: out-v2-
 
       - name: 2. ccache
@@ -150,18 +148,13 @@ jobs:
         uses: actions/setup-go@v5
         with: { go-version: '1.22' }
 
-      - name: 9. Rust + android target
-        uses: dtolnay/rust-toolchain@stable
-        with: { targets: aarch64-linux-android, components: rustfmt }
+      # Rust 已下线：模块 3/10/19 改成树内 C++（core/src/{gesture,license,store}）
 
       - name: 10. Flutter 3.24.5
         uses: subosito/flutter-action@v2
         with: { flutter-version: '3.24.5', channel: stable, cache: true }
 
-      - name: 10.5 Zig 0.13
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.13.0
+      # Zig 已下线：模块 4 的定长池改成树内 C++（core/src/common/mem_pool.cpp）
 
       - name: 11. NDK / API
         run: |
@@ -177,7 +170,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ccache zip unzip
           ccache --version | head -1
-          zig version
 
       # LuaJIT 已下线：模块 7 用自研 Lua 子集解释器（core/src/script/minilua.cpp）
 
@@ -189,16 +181,15 @@ jobs:
             echo "UI 出现底层技术报错文本"; exit 1
           fi
 
-      - name: 14. native 层（仅变更或缓存未命中）
-        if: steps.chg.outputs.native == 'true' || steps.ocache.outputs.cache-hit != 'true' || inputs.force
-        run: ./build.sh zig idl rust native
+      - name: 14. native 层（零外部产物：idl 契约校验 + CMake）
+        run: ./build.sh idl native
 
       - name: 15. 符号自检
         run: |
           NM=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
           SO=out/native/arm64/libyieyu_core.so
           ls -lh $SO
-          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts Yieyu_ImportScript Yieyu_PlayUrl Yieyu_ScriptCall Yieyu_Search Yieyu_PlaySong Yieyu_SetRate Yieyu_HttpProbe Yieyu_MakeKaraoke Yieyu_KaraokeStatus Yieyu_ImportPlugin Yieyu_SetPlugin Yieyu_IntegrityCheck Yieyu_SelfDigest Yieyu_KvCount Yieyu_StoreCount; do
+          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts Yieyu_ImportScript Yieyu_PlayUrl Yieyu_ScriptCall Yieyu_Search Yieyu_PlaySong Yieyu_SetRate Yieyu_HttpProbe Yieyu_MakeKaraoke Yieyu_KaraokeStatus Yieyu_ImportPlugin Yieyu_SetPlugin Yieyu_IntegrityCheck Yieyu_SelfDigest Yieyu_KvCount Yieyu_StoreCount gesture_start gesture_poll yieyu_mem_alive; do
             $NM -D --defined-only $SO | grep -q " $sym\$" || { echo "缺导出: $sym" >&2; exit 1; }
           done
           echo "导出面 OK"
@@ -249,7 +240,6 @@ jobs:
           name: yieyu-native-arm64
           path: |
             out/native/arm64/*.so
-            out/rust/**/release/*.so
           if-no-files-found: warn
           retention-days: 7
 
