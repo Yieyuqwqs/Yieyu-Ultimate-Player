@@ -151,7 +151,7 @@ function patchPlatformChannel() {
   walk(path.join(androidDir, 'app', 'src', 'main', 'kotlin'))
   if (!mainKt) { console.log('  ⚠ 没找到 MainActivity.kt，跳过平台通道'); return }
   let k = fs.readFileSync(mainKt, 'utf8')
-  if (k.includes('setupYieyuChannel')) { console.log('  · 平台通道已在 MainActivity 里'); return }
+  if (k.includes('yieyu/native')) { console.log('  · 平台通道已在 MainActivity 里'); return }
 
   const snippetPath = path.join(root, 'platform', 'main_activity_channel.kt')
   if (!fs.existsSync(snippetPath)) { console.log('  ⚠ 缺 platform/main_activity_channel.kt'); return }
@@ -167,10 +167,8 @@ function patchPlatformChannel() {
   for (const imp of wantImports) {
     if (!k.includes(imp)) k = k.replace(/^(package .*\n)/m, '$1\n' + imp + '\n')
   }
-  // onCreate 里注册
-  k = k.replace(/override fun onCreate\(savedInstanceState: android\.os\.Bundle\?\) \{/,
-    'override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        try { setupYieyuChannel() } catch (_: Throwable) { }')
-  k += '\n' + snippet
+  if (close < 0) { console.log('  ⚠ MainActivity.kt 结构异常，跳过平台通道'); return }
+  k = k.slice(0, close) + '\n' + snippet + '\n' + k.slice(close)
   fs.writeFileSync(mainKt, k)
   console.log('  ✓ 平台通道已注入 MainActivity（appDir / pickFile）')
 }

@@ -1,10 +1,12 @@
 
+
     // ── 平台通道（取代 file_picker / path_provider：这两个第三方插件会拖 SDK 版本依赖）──
+    // 入口用 configureFlutterEngine（onCreate 时 flutterEngine 可能还没准备好）
     private var pendingPick: MethodChannel.Result? = null
 
-    private fun setupYieyuChannel() {
-        val engine = flutterEngine ?: return
-        MethodChannel(engine.dartExecutor.binaryMessenger, "yieyu/native")
+    override fun configureFlutterEngine(flutterEngine: io.flutter.embedding.engine.FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "yieyu/native")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "appDir" -> result.success(filesDir.absolutePath)
