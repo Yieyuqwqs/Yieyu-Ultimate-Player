@@ -4,6 +4,7 @@
 /app/build/
 /app/.dart_tool/
 /app/.flutter-plugins*
+/app/android/
 /app/android/.gradle/
 /app/android/local.properties
 /android/.gradle/

@@ -167,6 +167,8 @@ function patchPlatformChannel() {
   for (const imp of wantImports) {
     if (!k.includes(imp)) k = k.replace(/^(package .*\n)/m, '$1\n' + imp + '\n')
   }
+  // ★ 必须插到 class 的最后一个 } 之前（直接 += 会落到文件末尾 → 顶层函数，#81 就是这么红的）
+  const close = k.lastIndexOf('}')
   if (close < 0) { console.log('  ⚠ MainActivity.kt 结构异常，跳过平台通道'); return }
   k = k.slice(0, close) + '\n' + snippet + '\n' + k.slice(close)
   fs.writeFileSync(mainKt, k)
