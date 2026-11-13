@@ -68,10 +68,7 @@ const STEPS = [
   { id: 'obfuscate', deps: ['native'], bin: 'node', desc: '模块11 链接后混淆 + 自校验摘要',
     cmd: () => ['node', 'tools/obfuscate.mjs'], out: ['obfuscate'], inputs: ['out/native/arm64'] },
 
-  { id: 'gradle', deps: ['native'], bin: 'gradle', desc: '模块22 Kotlin 前台服务 AAR',
-    cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },
-
-  { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'schema', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
+  { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'schema', 'wasm', 'lua'], bin: 'flutter', desc: '模块1/2 出 APK',
     cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/rust', 'out/go', 'out/ts', 'out/wasm'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',

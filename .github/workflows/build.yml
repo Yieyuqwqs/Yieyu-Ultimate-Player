@@ -126,7 +126,6 @@ jobs:
         with:
           path: |
             ~/.gradle/caches
-            ~/.gradle/wrapper
             ~/.gradle/daemon
             ~/.pub-cache
           # ★ 固定 key：内容变了也复用同一份缓存，增量交给 Gradle 自己判断。
@@ -291,7 +290,6 @@ jobs:
         with:
           path: |
             ~/.gradle/caches
-            ~/.gradle/wrapper
             ~/.gradle/daemon
             ~/.pub-cache
           key: gradle-v4-${{ runner.os }}-${{ github.run_id }}

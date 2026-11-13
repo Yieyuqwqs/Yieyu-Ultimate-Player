@@ -26,7 +26,6 @@ need('6', 'node', ['-v'], '>=18，构建期唯一脚本运行时')
 need('13 / 14 / 15 / 16 / …', 'cmake', ['--version'], '>=3.24')
 need('13 / 14 / 15', 'ninja', ['--version'], '生成器')
 need('22', 'java', ['-version'], 'JDK 17')
-need('22', 'gradle', ['--version'], '或 ./gradlew')
 need('11', 'clang', ['--version'], 'NDK 自带；O-LLVM 阶段需自建')
 
 const ndkOk = NDK && fs.existsSync(NDK)

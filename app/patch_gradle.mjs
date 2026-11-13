@@ -61,57 +61,64 @@ function patchGradleProperties() {
 }
 
 
-// ── [22] 前台服务：把 android/ 编出来的 AAR 塞进 Flutter 工程并拉起 ──────────
-// 背景：platform-service 这个 module 一直在编，但 Flutter 工程的 gradle 从来没引用过它，
-//      所以 APK 里根本没有 PlaybackService —— 整个模块 22 是"编了不用"。
-// AAR 自带的 AndroidManifest 会声明 service 与权限，合并进主包即可。
+// ── [22] 前台服务：直接把 Kotlin 源文件拷进 Flutter 工程 ────────────────
+// 以前是独立 gradle 子模块 + AAR，会连带下载 AGP 插件与 androidx.core/media 两个 Maven 库。
+// 这个服务的 API 全在 android.* 框架里（不需要 androidx），所以直接拷源文件 + 声明在清单里，
+// 构建期就少一堆外部下载。
 function patchPlatformService() {
-  const aarDir = path.join(root, "..", "android", "platform-service", "build", "outputs", "aar")
-  if (!fs.existsSync(aarDir)) { console.log("  ⚠ 没有 platform-service AAR（模块22 走空实现）"); return }
-  const aars = fs.readdirSync(aarDir).filter(f => f.endsWith(".aar"))
-  if (!aars.length) { console.log("  ⚠ AAR 目录是空的（模块22 走空实现）"); return }
+  const src = path.join(root, 'platform', 'PlaybackService.kt')
+  if (!fs.existsSync(src)) { console.log('  ⚠ 缺 app/platform/PlaybackService.kt（模块22 跳过）'); return }
 
-  const libsDir = path.join(androidDir, "app", "libs")
-  fs.mkdirSync(libsDir, { recursive: true })
-  fs.copyFileSync(path.join(aarDir, aars[0]), path.join(libsDir, "platform-service.aar"))
-  console.log("  ✓ 前台服务 AAR 已就位：" + aars[0])
-
-  // ① gradle 依赖（AAR 的传递依赖要显式补，files() 不会带传递依赖）
-  for (const name of ["app/build.gradle", "app/build.gradle.kts"]) {
-    const p = path.join(androidDir, name)
-    if (!fs.existsSync(p)) continue
-    let g = fs.readFileSync(p, "utf8")
-    if (!g.includes("platform-service.aar")) {
-      const kts = name.endsWith(".kts")
-      const dep = kts
-        ? "    implementation(files(\"libs/platform-service.aar\"))\n" +
-          "    implementation(\"androidx.core:core-ktx:1.13.1\")\n" +
-          "    implementation(\"androidx.media:media:1.7.0\")\n"
-        : "    implementation files(\"libs/platform-service.aar\")\n" +
-          "    implementation \"androidx.core:core-ktx:1.13.1\"\n" +
-          "    implementation \"androidx.media:media:1.7.0\"\n"
-      g = g.replace(/dependencies\s*\{/, (m) => m + "\n" + dep)
-      fs.writeFileSync(p, g)
-      console.log("  ✓ gradle 已依赖前台服务 AAR：" + name)
-    }
-  }
-
-  // ② 启动时拉起服务（失败绝不把 App 带崩）
-  const kt = path.join(androidDir, "app", "src", "main", "kotlin")
+  // ① 找到生成的 main kotlin 目录（flutter create 会生成 MainActivity.kt）
+  const ktRoot = path.join(androidDir, 'app', 'src', 'main', 'kotlin')
   let mainKt = null
   const walk = (d) => {
     if (!fs.existsSync(d)) return
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const f = path.join(d, e.name)
       if (e.isDirectory()) walk(f)
-      else if (e.name === "MainActivity.kt") mainKt = f
+      else if (e.name === 'MainActivity.kt') mainKt = f
     }
   }
-  walk(kt)
-  if (!mainKt) { console.log("  ⚠ 没找到生成的 MainActivity.kt，跳过服务拉起"); return }
-  let k = fs.readFileSync(mainKt, "utf8")
-  if (!k.includes("PlaybackService")) {
-    k = k.replace(/class MainActivity\s*:\s*FlutterActivity\(\)\s*\{/, m => m + `
+  walk(ktRoot)
+  if (!mainKt) { console.log('  ⚠ 没找到 MainActivity.kt，跳过前台服务'); return }
+
+  const appPkgDir = path.dirname(mainKt)
+  const svcDir = path.join(appPkgDir, 'service')
+  fs.mkdirSync(svcDir, { recursive: true })
+  // ★ 包名保持不变（com.yieyu.ultimate.service）：Kotlin 不要求目录与包一致，
+  //   而 JNI 符号名是 Java_com_yieyu_ultimate_service_PlaybackService_*，改包名会让它变。
+  const kt = fs.readFileSync(src, 'utf8')
+  fs.writeFileSync(path.join(svcDir, 'PlaybackService.kt'), kt)
+  console.log('  ✓ 前台服务源文件已拷入（无 AAR、无 androidx）')
+
+  // ② 清单里声明 service 与权限
+  const manifest = path.join(androidDir, 'app', 'src', 'main', 'AndroidManifest.xml')
+  if (fs.existsSync(manifest)) {
+    let m = fs.readFileSync(manifest, 'utf8')
+    if (!m.includes('PlaybackService')) {
+      const perms = [
+        '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
+        '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />',
+        '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+      ].join('\n    ')
+      m = m.replace(/<application/, perms + '\n\n    <application')
+      m = m.replace(/<\/application>/,
+        '    <service\n' +
+        '            android:name="com.yieyu.ultimate.service.PlaybackService"\n' +
+        '            android:exported="false"\n' +
+        '            android:foregroundServiceType="mediaPlayback"\n' +
+        '            android:stopWithTask="false" />\n' +
+        '    </application>')
+      fs.writeFileSync(manifest, m)
+      console.log('  ✓ 清单已声明 PlaybackService')
+    }
+  }
+
+  // ③ 启动时拉起（失败绝不把 App 带崩）
+  let k = fs.readFileSync(mainKt, 'utf8')
+  if (!k.includes('PlaybackService')) {
+    k = k.replace(/class MainActivity\s*:\s*FlutterActivity\(\)\s*\{/, (mm) => mm + `
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         // [22] 前台服务：通知栏播放控制。任何异常都不许让主界面起不来。
@@ -122,7 +129,7 @@ function patchPlatformService() {
         }
     }`)
     fs.writeFileSync(mainKt, k)
-    console.log("  ✓ MainActivity 已拉起前台服务")
+    console.log('  ✓ MainActivity 已拉起前台服务')
   }
 }
 
