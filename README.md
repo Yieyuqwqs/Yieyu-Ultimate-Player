@@ -25,14 +25,14 @@ Flutter ─ Rust(Tokio, ring) + Zig + Go(TLS) + TypeScript(构建期) + LuaJIT �
 |---|---|---|---|---|
 | 1 | Dart (Flutter) | Impeller | 宏观界面：页面跳转、列表、设置、自检页 | `app/lib/shell`、`app/lib/diag` |
 | 2 | 自研矢量动画 | 弹簧状态机 + CustomPainter | 31 段 EQ 曲线跳动、播放键呼吸灯 | `app/lib/animation/vector_stage.dart` |
-| 3 | Rust + Tokio | 多线程 runtime | 手势捕捉：滑动切歌、长按换 EQ | `rust/gesture-tokio` |
-| 4 | Zig | 自研定长池 | JSB 命令帧分配（不碰 malloc） | `zig/` |
+| 3 | C++ | 自研状态机 | 手势捕捉：滑动切歌、长按换 EQ | `core/src/gesture` |
+| 4 | C++ | 自研定长池（mmap+空闲表） | JSB 命令帧分配（不碰 malloc） | `core/src/common/mem_pool.cpp` |
 | 5 | Go | net/http + TLS1.3 | 并发搜歌 + 取直链 | `go/fetch` |
 | 6 | TypeScript | Zod（构建期） | JSON 清洗 + 生成 Dart 歌曲模型 | `ts/`、`tools/gen-schema.mjs` |
-| 7 | Lua (LuaJIT) | 沙箱 + 指令计数 | 第三方音源脚本（随包 `wy.lua`） | `core/src/script`、`lua/sources` |
+| 7 | Lua 子集 | **自研解释器**（不引 LuaJIT） | 第三方音源脚本（随包 `wy.lua`） | `core/src/script`、`lua/sources` |
 | 8 | WebAssembly | 自研 YPFX 解释器 | 热更新音效插件（不下发 APK） | `core/src/plugin`、`tools/mkplugin.mjs` |
 | 9 | C | BSD socket | HTTP/1.1 取流（chunked/302/大小上限） | `core/src/net/stream_http.c` |
-| 10 | Rust + ring | Ed25519 | 卡密验签（唯一密钥点） | `rust/license-ring` |
+| 10 | C++ | 自写 SHA-256/HMAC | 卡密验签（唯一密钥点） | `core/src/license/license.cpp` |
 | 11 | 自研防篡改 | 符号重命名 + strip + sha256 | 机器码收紧与完整性自校验 | `tools/obfuscate.mjs`、`core/src/common/integrity.cpp` |
 | 12 | ARM64 NEON | 手写汇编 | 常数时间摘要比对 | `asm/neon_ct_compare.S` |
 | 13 | C | NDK mediandk | 解封装解码（mp3/flac/m4a/aac/wav…） | `core/src/audio/demux_platform.c` |
@@ -41,10 +41,10 @@ Flutter ─ Rust(Tokio, ring) + Zig + Go(TLS) + TypeScript(构建期) + LuaJIT �
 | 16 | C++ | 自研 DSF/DFF 解码 | DSD → PCM（FIR÷8 + 模块14） | `core/src/audio/dsd.cpp` |
 | 17 | C++ | 自研 DSP | 31 段 EQ / 胆机 / 黑胶 / 8D | `core/src/dsp` |
 | 18 | C++ + Python | 自研 STFT 中置抑制 | 离线人声消除（生成伴奏），核系数 Python 生成 | `core/src/ai`、`python/vocal_remover` |
-| 19 | Rust + Tokio | 自研只读库 | 本地库异步只读（与 20 同一文件） | `rust/store-read` |
+| 19 | C++ | 自研只读库 | 本地库只读（与 20 同一文件格式） | `core/src/store/store_read.cpp` |
 | 20 | C++ | 自研追加日志 | 唯一写者：会话/进度/预设（CRC + 断电截断 + 压实） | `core/src/store` |
 | 21 | 自研二进制契约 | 40 字节帧头 | 跨语言零拷贝打包，`idl/*.fbs` 为真源 | `core/src/ipc`、`idl/` |
-| 22 | Kotlin | Service | 前台服务保活（通知栏播控，唯一 JNI 面） | `android/platform-service` |
+| 22 | Kotlin | Service（直接编进 App，无 Gradle 子模块） | 前台服务保活（通知栏播控，唯一 JNI 面） | `app/platform/PlaybackService.kt` |
 | 23 | C/C++ | NDK ASensor | 直读陀螺仪/旋转矢量 → 8D | `core/src/sensor` |
 | 24 | C++ | 自研 JSB | UI ↔ 底层唯一天桥（dart:ffi，无 JNI） | `core/src/jsb` |
 
@@ -53,12 +53,10 @@ Flutter ─ Rust(Tokio, ring) + Zig + Go(TLS) + TypeScript(构建期) + LuaJIT �
 ## 30 秒看懂结构
 
 ```
-app/      Flutter 顶层（模块 1/2）+ FFI（3/24）
+app/      Flutter 顶层（模块 1/2/22）+ FFI（3/24），pubspec 只有 sdk: flutter
 core/     C++ 汇聚层 → libyieyu_core.so（7/8/9/12~18/20/21/23/24）
-rust/     手势 / 验签 / 只读库（3/10/19）
-go/       搜歌 + 取直链（5），C ABI 出口 libyieyu_fetch.so
+go/       搜歌 + 取直链 + TLS（5/9），C ABI 出口 libyieyu_fetch.so
 ts/       构建期 schema → Dart 模型（6）
-zig/      分配器（4）→ libyieyu_mem.a
 asm/      NEON 常数时间比对（12）
 lua/      随包音源脚本（7）
 python/   人声消除核系数生成（18）

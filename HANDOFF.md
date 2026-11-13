@@ -2,7 +2,8 @@
 
 ## 0. 一句话
 
-`Yieyuqwqs/Yieyu-Ultimate-Player`：**24 个模块全部有真实调用点，零第三方二进制**。
+`Yieyuqwqs/Yieyu-Ultimate-Player`：**24 个模块全部有真实调用点；零第三方二进制、零第三方插件**。
+构建期只依赖"语言工具链"（Flutter SDK / NDK / JDK / Go），没有任何第三方库下载。
 所有"空实现"分支已删除；缺的库用自研等价实现替掉（清单见 `third_party/README.md`）。
 
 ## 1. 运行环境（本机 vs 云端）
@@ -26,14 +27,14 @@
 |---|---|
 | 1 | `app/lib/shell`（首页/设置）+ `app/lib/diag/modules_page.dart`（24 模块自检） |
 | 2 | `app/lib/animation/vector_stage.dart`：弹簧状态机，输入 `Yieyu_Snapshot.eqDb` |
-| 3 | `home_page` 的 Listener → `GestureBridge` → `libyieyu_gesture.so`（滑动切歌/长按换 EQ） |
-| 4 | `Yieyu_Post` 命令帧先过 `yieyu_mem_alloc`（Zig 池） |
+| 3 | `home_page` 的 Listener → `GestureBridge` → libyieyu_core.so 里的 gesture_*（C++ 状态机） |
+| 4 | `Yieyu_Post` 命令帧先过 `yieyu_mem_alloc`（C++ mmap 池） |
 | 5 | 首页搜索 → `Yieyu_Search` → Go `yieyu_music_search`；点歌 → `yieyu://song` → `yieyu_music_url` |
 | 6 | 构建期 `tools/gen-schema.mjs`：Zod schema → `app/lib/model/song.dart`（UI 直接用） |
-| 7 | 脚本导入/随包 `wy.lua` → `lua_sandbox` → `get_music_url` → 播放 |
+| 7 | 脚本导入/随包 `wy.lua` → `lua_sandbox`（自研 Lua 子集解释器）→ `get_music_url` → 播放 |
 | 8 | `assets/plugins/*.ypfx` → 自研解释器 → 解码线程 DSP 链（设置里可关） |
 | 9 | `http://` 直链 → `yieyu_http_download` → 私有缓存 → 解码器；自检页有 `Yieyu_HttpProbe` |
-| 10 | `Engine::Boot` dlopen `libyieyu_license.so` → `yieyu_license_has_pubkey` |
+| 10 | `Engine::Boot` 直接调 `yieyu_license_has_pubkey`（HMAC-SHA256，自写） |
 | 11 | `tools/obfuscate.mjs` 链接后重命名+strip+sha256 → `assets/integrity/` → 启动 `Yieyu_IntegrityCheck` |
 | 12 | 上面的摘要比对走 `asm/neon_ct_compare.S`（常数时间） |
 | 13 | `yieyu_pdec_open/read/seek`（mediandk；本地文件走 fd，WAV 有内置直通） |
@@ -42,10 +43,10 @@
 | 16 | `dsd_probe` 命中 .dsf/.dff → `dsd_open/read`（FIR÷8）→ 模块14 |
 | 17 | 解码线程：`eq31/tube_vinyl/hrtf8d`；8D 姿态来自模块 23 |
 | 18 | 开发者面板「[18] 生成伴奏」→ `Yieyu_MakeKaraoke` → `yieyu_vocals_render`（核系数由 Python 生成） |
-| 19 | `Engine::Boot` dlopen `libyieyu_store.so` → 只读同一 KV 文件 → 计数进 Stats |
+| 19 | `Engine::Boot` 调 `yieyu_store_open(kv_path())`（C++ 只读库）→ 计数进 Stats |
 | 20 | `kv_open/put/get`：音量/音效开关/上次曲目/播放进度（每 2 秒一次） |
 | 21 | 控制面/数据面统一 40 字节帧头；`tools/verify-idl.mjs` 拿 fbs 反查偏移与枚举 |
-| 22 | `patch_gradle.mjs` 打 AAR + MainActivity 拉起 → 通知栏 → JNI 2 个符号 |
+| 22 | `patch_gradle.mjs` 拷 Kotlin 源文件 + 清单声明 + MainActivity 拉起 → 通知栏 → JNI 2 个符号 |
 | 23 | `gyro_start(200Hz)` → 解码线程每块读姿态 → `hrtf8d_set_pose` |
 | 24 | `core/src/jsb`：全部导出经 `exports.map` 白名单（`llvm-nm -D` 校验） |
 

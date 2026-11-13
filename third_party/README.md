@@ -16,5 +16,10 @@ ONNX Runtime 全部不用。需要的功能都在树内自己实现，理由只�
 | WasmEdge | 自研 YPFX 字节码解释器 + 自研插件生成器 | `core/src/plugin/wasm_interp.cpp`、`tools/mkplugin.mjs` |
 | ONNX Runtime | 自研离线人声消除（STFT 中置抑制），核系数由 Python 生成 | `core/src/ai/vocals.cpp`、`python/vocal_remover/design.py` |
 | Obfuscator-LLVM | 链接后处理：符号重命名 + strip + 自校验摘要 | `tools/obfuscate.mjs`、`core/src/common/integrity.cpp` |
+| LuaJIT | 自研 Lua 子集解释器（词法→AST→树遍历） | `core/src/script/minilua.cpp` |
+| WasmEdge | 自有字节码 YPFX + 自研 VM | `core/src/plugin`、`tools/mkplugin.mjs` |
+| Rust（Tokio/ring/SQLx） | 全部改成树内 C++ | `core/src/gesture`、`license`、`store/store_read.cpp` |
+| Zig（分配器） | 树内 C++ 定长池 | `core/src/common/mem_pool.cpp` |
+| file_picker / path_provider / ffi | 自己的平台通道 + FFI 工具层 | `app/lib/platform`、`app/lib/jsb/ffi_shim.dart` |
 
 **这里永远只放"怎么拿"的说明，不放代码、不放二进制。**
