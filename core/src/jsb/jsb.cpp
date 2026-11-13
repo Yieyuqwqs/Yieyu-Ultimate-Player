@@ -85,6 +85,15 @@ void Yieyu_Stop(void) { if (g_inited.load()) yieyu::Engine::Instance().StopAudio
 int  Yieyu_SeekMs(int64_t ms) { return g_inited.load() ? yieyu::Engine::Instance().SeekMs(ms) : -1; }
 void Yieyu_SetVolume(float v) { if (g_inited.load()) yieyu::Engine::Instance().SetVolume(v); }
 
+// ── ⑧ [17] DSP 音效链（默认旁路）───────────────────────────────────
+void Yieyu_SetDsp(int on) { if (g_inited.load()) yieyu::Engine::Instance().SetDsp(on != 0); }
+void Yieyu_SetEqGain(int band, float db) {
+  if (g_inited.load()) yieyu::Engine::Instance().SetEqGain(band, db);
+}
+void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive) {
+  if (g_inited.load()) yieyu::Engine::Instance().SetTone(tube != 0, vinyl != 0, lpf != 0, drive);
+}
+
 int  Yieyu_Service_Ping(void) { return g_inited.load() ? 1 : 0; }
 void Yieyu_Service_OnNotificationAction(int actionId) {
   yieyu::Engine::Instance().OnSystemAction(actionId);

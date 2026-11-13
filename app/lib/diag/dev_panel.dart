@@ -31,6 +31,7 @@ class _DevPanelState extends State<DevPanel> {
   String _scriptHint = '';
   Timer? _statsTimer;
   double _volume = 1.0;
+  bool _dspOn = false;
   String _bootLog = '';
 
   @override
@@ -252,6 +253,30 @@ class _DevPanelState extends State<DevPanel> {
                         ),
                       ),
                       Text('${(_volume * 100).round()}%', style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Text('[17] 音效链', style: TextStyle(fontSize: 12)),
+                      Switch(
+                        value: _dspOn,
+                        onChanged: (v) {
+                          setState(() => _dspOn = v);
+                          JsbClient.instance.setDsp(v);
+                          BootLog.instance.write('dsp=$v');
+                        },
+                      ),
+                      OutlinedButton(
+                        onPressed: () {
+                          // 0~7 段 +6dB：开了音效链就能听出低音变重（证明 [17] 真在跑）
+                          for (var b = 0; b < 8; b++) {
+                            JsbClient.instance.setEqGain(b, 6);
+                          }
+                          setState(() => _hint = '低频 +6dB 已下发（需先打开音效链）');
+                        },
+                        child: const Text('低音+6dB'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),

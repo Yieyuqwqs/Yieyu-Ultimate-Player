@@ -74,6 +74,11 @@ void Engine::ResumeAudio() { Player::Instance().Resume(); }
 void Engine::StopAudio() { Player::Instance().Stop(); }
 int  Engine::SeekMs(int64_t ms) { return Player::Instance().SeekMs(ms); }
 void Engine::SetVolume(float v) { Player::Instance().SetVolume(v); }
+void Engine::SetDsp(bool on) { Player::Instance().SetDsp(on); }
+void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
+void Engine::SetTone(bool tube, bool vinyl, bool lpf, float drive) {
+  Player::Instance().SetTone(tube, vinyl, lpf, drive);
+}
 
 int Engine::HandleCommand(const uint8_t* fbs, size_t len) {
   // 骨架期：只做"长度/版本"校验，真实分发见 idl/jsb.fbs 的 op 枚举

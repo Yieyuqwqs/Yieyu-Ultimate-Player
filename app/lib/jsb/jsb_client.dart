@@ -90,6 +90,12 @@ typedef _VoidVoidDart = void Function();
 typedef _FloatVoidNative = Void Function(Float);
 typedef _FloatVoidDart = void Function(double);
 typedef _StatsNative = Void Function(Pointer<Utf8>, IntPtr);
+typedef _IntVoidNative = Void Function(Int32);
+typedef _IntVoidDart = void Function(int);
+typedef _IntFloatVoidNative = Void Function(Int32, Float);
+typedef _IntFloatVoidDart = void Function(int, double);
+typedef _ToneVoidNative = Void Function(Int32, Int32, Int32, Float);
+typedef _ToneVoidDart = void Function(int, int, int, double);
 typedef _StatsDart = void Function(Pointer<Utf8>, int);
 class JsbClient {
   JsbClient._();
@@ -130,6 +136,12 @@ class JsbClient {
       _lib.lookupFunction<_VoidVoidNative, _VoidVoidDart>('Yieyu_Stop');
   late final _I64IntDart _seek =
       _lib.lookupFunction<_I64IntNative, _I64IntDart>('Yieyu_SeekMs');
+  late final _IntVoidDart _setDsp =
+      _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetDsp');
+  late final _IntFloatVoidDart _setEqGain =
+      _lib.lookupFunction<_IntFloatVoidNative, _IntFloatVoidDart>('Yieyu_SetEqGain');
+  late final _ToneVoidDart _setTone =
+      _lib.lookupFunction<_ToneVoidNative, _ToneVoidDart>('Yieyu_SetTone');
   late final _StatsDart _stats =
       _lib.lookupFunction<_StatsNative, _StatsDart>('Yieyu_Stats');
   late final _FloatVoidDart _setVolume =
@@ -286,6 +298,22 @@ class JsbClient {
   void setVolume(double v) {
     try { _setVolume(v.clamp(0.0, 1.0)); } catch (_) {}
   }
+  // ── [17] DSP 音效链（默认全旁路；打开才有音色变化）────────────────
+  void setDsp(bool on) {
+    try { _setDsp(on ? 1 : 0); } catch (_) {}
+  }
+
+  /// 单段 EQ 增益（band 0..30，±24 dB）。
+  void setEqGain(int band, double db) {
+    try { _setEqGain(band, db.clamp(-24.0, 24.0).toDouble()); } catch (_) {}
+  }
+
+  void setTone(bool tube, bool vinyl, bool lpf, double drive) {
+    try {
+      _setTone(tube ? 1 : 0, vinyl ? 1 : 0, lpf ? 1 : 0, drive);
+    } catch (_) {}
+  }
+
   /// 各模块健康度一行（含播放器 st= 与 underrun=）。核心没起来时返回空串。
   String statsLine() {
     final buf = malloc.allocate<Utf8>(512);

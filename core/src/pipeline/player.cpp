@@ -7,6 +7,7 @@
 
 #include "../audio/aaudio_sink.h"
 #include "../audio/demux_platform.h"
+#include "../dsp/dsp.h"
 #include "../common/log.h"
 
 namespace yieyu {
@@ -78,6 +79,21 @@ int Player::SeekMs(int64_t ms) {
   if (st == kIdle || st == kError) return -2;   // 没在放，无事可做
   seekReqMs_.store(ms);
   return 0;
+}
+
+void Player::SetDsp(bool on) { dspOn_.store(on, std::memory_order_relaxed); }
+
+bool Player::DspOn() const { return dspOn_.load(std::memory_order_relaxed); }
+
+void Player::SetEqGain(int band, float db) {
+  if (band < 0 || band >= 31) return;
+  if (!(db >= -24.0f)) db = -24.0f;      // NaN / 过小都夹
+  if (db > 24.0f) db = 24.0f;
+  eq31_set_gain(band, db);
+}
+
+void Player::SetTone(bool tube, bool vinyl, bool lpf, float drive) {
+  tube_vinyl_set(tube, vinyl, lpf, drive);
 }
 
 void Player::SetVolume(float v) {
@@ -190,6 +206,13 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     return;
   }
   sinkUp_.store(true, std::memory_order_relaxed);
+
+  // [17] DSP 链按【源采样率】初始化；默认旁路（dspOn_ == false 时一个样本都不碰）
+  eq31_init(rate_.load(std::memory_order_relaxed));
+  tube_vinyl_init(rate_.load(std::memory_order_relaxed));
+  hrtf8d_init(rate_.load(std::memory_order_relaxed));
+  dspOn_.store(false, std::memory_order_relaxed);
+
   state_.store(kPlaying);
 
   for (;;) {
@@ -208,6 +231,12 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     // ⑤ 解一块
     const int n = yieyu_pdec_read(g_scratch, kChunkFrames);
     if (n > 0) {
+      // [17] 音效链：只在解码线程跑（音频线程零处理，守铁律 2）
+      if (dspOn_.load(std::memory_order_relaxed)) {
+        eq31_process(g_scratch, n);
+        tube_vinyl_process(g_scratch, n);
+        hrtf8d_process(g_scratch, n, rate_.load(std::memory_order_relaxed));
+      }
       ring_->write(g_scratch, (size_t)n * 2);
       continue;
     }

@@ -32,6 +32,9 @@ class Engine {
   void StopAudio();
   int  SeekMs(int64_t ms);
   void SetVolume(float v);
+  void SetDsp(bool on);
+  void SetEqGain(int band, float db);
+  void SetTone(bool tube, bool vinyl, bool lpf, float drive);
 
   // 各模块共享的环（唯一的"总线"）
   ByteRing& byteRing() { return *byteRing_; }

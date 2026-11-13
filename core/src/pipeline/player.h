@@ -28,6 +28,10 @@ class Player {
   void Stop();
   int  SeekMs(int64_t ms);         // 0=已受理；<0=参数错
   void SetVolume(float v);         // 0..1
+  void SetDsp(bool on);            // [17] 音效链总开关（默认关）
+  bool DspOn() const;
+  void SetEqGain(int band, float db);                       // 0..30 段，±24 dB
+  void SetTone(bool tube, bool vinyl, bool lpf, float drive);
   void Shutdown();
 
   // ── 数据面（只在音频线程调用）─────────────────────────────────────
@@ -74,6 +78,7 @@ class Player {
   std::atomic<float>   peakL_{0.0f};
   std::atomic<float>   peakR_{0.0f};
   std::atomic<bool>    sinkUp_{false};
+  std::atomic<bool>    dspOn_{false};   // [17] 默认旁路
 };
 
 }  // namespace yieyu

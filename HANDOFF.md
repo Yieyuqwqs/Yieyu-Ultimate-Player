@@ -133,6 +133,25 @@ Dart/JSB 线程只写原子请求 → 唯一解码线程做阻塞打开与解码
 > 不是本 App 的音源脚本；本 App 要的是落雪生态的 `get_music_url` / 搜索类脚本
 > （现成的在 `/storage/emulated/0/yieyu/scripts/yieyu.lua`）。
 
+### 2.8 [17] DSP 音效链接入（2026-11-13 傍晚，run #54 起）
+
+**做了什么**：新增 `core/src/dsp/dsp.h`，把原本「写好了但没人调」的三件套接进**解码线程**
+（解码 → EQ31 → 胆机/黑胶 → 8D → PCM 环 → AAudio）：
+
+| 环节 | 函数 | 默认 |
+|---|---|---|
+| 31 段 EQ（ISO 1/3 倍频程 biquad） | `eq31_init/eq31_process/eq31_set_gain` | 旁路（全 0 dB） |
+| 胆机软削波 + 黑胶 + 16k 陡降 LPF | `tube_vinyl_process/tube_vinyl_set` | 旁路 |
+| 8D 空间化（吃 [23] 姿态） | `hrtf8d_process/hrtf8d_set_pose` | 旁路 |
+
+**为什么默认旁路**：音效会改变音色，在真机确认「能出声」之前一律不动声音；
+JSB 新增 `Yieyu_SetDsp(on)` / `Yieyu_SetEqGain(band, db)` / `Yieyu_SetTone(tube,vinyl,lpf,drive)`，
+开发者面板加了「[17] 音效链」开关 + 「低音+6dB」按钮（打开开关后按下去，低音明显变重 = [17] 真的在跑）。
+
+**红线**：DSP 只在**解码线程**跑。AAudio 回调里仍然只有「读环 + 音量 + 峰值」（铁律 2 不变）。
+
+---
+
 ---
 
 ## 3. 本机工具脚本（都在 `~/work/up/`）

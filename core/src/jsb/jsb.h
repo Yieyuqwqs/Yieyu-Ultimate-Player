@@ -69,6 +69,11 @@ YIEYU_API void Yieyu_Stop(void);
 YIEYU_API int  Yieyu_SeekMs(int64_t ms);         // 0=已受理
 YIEYU_API void Yieyu_SetVolume(float v);         // 0..1
 
+// ⑧ [17] DSP 音效链。默认全关（旁路）——打开后才会有音色变化。
+YIEYU_API void Yieyu_SetDsp(int on);                        // 1=EQ+胆机/黑胶+8D 全开
+YIEYU_API void Yieyu_SetEqGain(int band, float db);         // band 0..30，±24 dB
+YIEYU_API void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive);
+
 // ── 模块 7 热更：脚本导入（不打包、不重启，秒生效）─────────────────
 // 扫描 /storage/emulated/0/yieyu/scripts/*.lua，黑名单校验后加载。
 // loaded/rejected 可传 NULL。返回 0=完成。

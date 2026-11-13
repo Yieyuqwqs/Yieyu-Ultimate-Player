@@ -6,6 +6,8 @@
     Yieyu_Version; Yieyu_LastError; Yieyu_Stats; Yieyu_Free;
     /* 播放控制（能放歌的最小闭环）*/
     Yieyu_PlayUrl; Yieyu_Pause; Yieyu_Resume; Yieyu_Stop; Yieyu_SeekMs; Yieyu_SetVolume;
+    /* [17] DSP 音效链 */
+    Yieyu_SetDsp; Yieyu_SetEqGain; Yieyu_SetTone;
     /* 黑匣子：导出日志（UI 只调这两个，不展示内容） */
     Yieyu_ExportLogs; Yieyu_LogDir; Yieyu_LogIsPublic; Yieyu_SetTrace;
     /* [7] 脚本热更 */
