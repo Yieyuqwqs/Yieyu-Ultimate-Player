@@ -128,6 +128,14 @@
 | 16 | `Incompatible types 'String?' and 'Int'` | 我把 Intent action（String）和 native 码（Int）混成一个常量 | 拆成 `ACTION_*`（String）与 `CODE_*`（Int） |
 | 17 | `friendPathsSet$kotlin_gradle_plugin_common` | 缺 `android.useAndroidX=true` | 加 `android/gradle.properties` |
 
+### B2. 脚本热更链路（2026-11-13 晚补）
+
+| # | 报错/现象 | 根因 | 修法 |
+|---|---|---|---|
+| 20 | 导入 .lua 一律"导入失败" | `strstr(data,...)` 扫的是**没有 NUL 结尾**的裸字节，越界读 → 误判黑名单或崩 | 先 memcpy 到 len+1 的缓冲并补 `\0` 再扫 |
+| 21 | 脚本里 `http_post` 是 nil | 沙箱只注册了 `http_get` | 注册 `http_get/http_post/request/fetch/http.*` 五个别名指向同一出口 |
+| 22 | 导入成功后仍搜不到歌 | LuaJIT 没编进包（OFFLINE），且 `http_get` 背后没有 curl | CI 自动编 LuaJIT（失败降级）+ 明示 HTTP 要等 P2 接 libcurl |
+
 ### C. 装机运行期（最值钱的两条）
 
 | # | 报错 | 根因 | 修法 |

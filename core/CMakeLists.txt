@@ -40,6 +40,18 @@ if(NOT EXISTS "${_zig}")
   set(_zig "${YIEYU_OUT}/zig/libyieyu_mem.a")
 endif()
 
+# ─── [7] LuaJIT：脚本引擎。有就真跑，没有就 stub（导入链路照常）──────
+set(LUAJIT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua")
+if(EXISTS "${LUAJIT_ROOT}/lib/libluajit.a" AND EXISTS "${LUAJIT_ROOT}/include/lua.h")
+  add_library(luajit STATIC IMPORTED)
+  set_target_properties(luajit PROPERTIES IMPORTED_LOCATION "${LUAJIT_ROOT}/lib/libluajit.a")
+  include_directories("${LUAJIT_ROOT}/include")
+  add_compile_definitions(YIEYU_HAVE_LUAJIT=1)
+  message(STATUS "[7] LuaJIT 已接入：脚本可以真正执行")
+else()
+  message(WARNING "[7] 没有 third_party/lua（LuaJIT）→ 脚本只能导入+校验，执行返回 -2")
+endif()
+
 # ─── 第三方（见 third_party/README.md）────────────────────────────────
 if(NOT YIEYU_OFFLINE_ASSETS)
   include(cmake/FindFFmpeg.cmake)
@@ -120,6 +132,10 @@ if(TARGET yieyu_store)
 endif()
 if(EXISTS "${_zig}")
   list(APPEND YIEYU_LIBS "${_zig}")
+endif()
+
+if(TARGET luajit)
+  list(APPEND YIEYU_LIBS luajit m)
 endif()
 
 target_link_libraries(yieyu_core PRIVATE ${YIEYU_LIBS})

@@ -1,6 +1,8 @@
 // [24] JSB 实现。这里只做"搬运与路由"，任何业务判定都必须在各自模块里。
 #include "jsb.h"
 #include <cstdio>
+#include <cerrno>
+#include <vector>
 #include <cstdlib>
 #include "../common/log.h"
 #include "../pipeline/engine.h"
@@ -72,38 +74,63 @@ int Yieyu_LogIsPublic(void) { return bb_is_public(); }
 void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
 
 int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
-  if (!name || !data || len <= 0) return -1;
+  if (!name || !data || len <= 0) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：参数非法 name=%p data=%p len=%d", (const void*)name, (const void*)data, len);
+    return -1;
+  }
   const size_t nlen = std::strlen(name);
-  if (nlen < 5 || std::strcmp(name + nlen - 4, ".lua") != 0) return -1;
-  if (len > 512 * 1024) return -4;
+  if (nlen < 5 || std::strcmp(name + nlen - 4, ".lua") != 0) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：文件名不是 .lua（%s）", name);
+    return -1;
+  }
+  if (len > 512 * 1024) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：脚本 %d 字节超过 512KB", len);
+    return -4;
+  }
 
-  // 黑名单静态检查（与 tools/collect-lua.mjs、lua_sandbox.cpp 同源）
+  // ★ 必须补 NUL：data 是 Dart 传来的裸字节，没有结束符。
+  //   之前直接 strstr(data, ...) 会越界读，可能误判黑名单也可能崩（踩过）。
+  std::vector<char> src((size_t)len + 1);
+  std::memcpy(src.data(), data, (size_t)len);
+  src[(size_t)len] = 0;
+
   static const char* kBan[] = {"os.execute", "os.exit", "io.open", "io.write",
                                "package.loadlib", "debug.sethook", "require(", "dofile(", "loadfile("};
   for (const char* b : kBan) {
-    if (std::strstr((const char*)data, b) != nullptr) {
-      bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入脚本 %s：触发沙箱黑名单 %s", name, b);
+    if (std::strstr(src.data(), b) != nullptr) {
+      bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入 %s：触发沙箱黑名单 \"%s\"（脚本 %d 字节）", name, b, len);
       return -2;
     }
   }
 
+  // 目录：优先黑匣子目录；bb_dir 为空时退回 filesDir（jsb_init 里存下来的）
+  char base[512];
+  if (bb_dir()[0]) {
+    std::snprintf(base, sizeof(base), "%s", bb_dir());
+  } else {
+    std::snprintf(base, sizeof(base), "%s/yieyu", g_filesDir);
+  }
   char dir[600], path[700];
-  std::snprintf(dir, sizeof(dir), "%s/scripts", bb_dir());
+  std::snprintf(dir, sizeof(dir), "%s/scripts", base);
   std::snprintf(path, sizeof(path), "%s/%s", dir, name);
-  // 目录逐级建（私有目录一定可写；公共目录不可写时 bb_dir 已经降级过了）
+  ::mkdir(base, 0770);
   ::mkdir(dir, 0770);
 
   FILE* f = std::fopen(path, "wb");
   if (!f) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 脚本写盘失败：%s", path);
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d）", path, errno);
     return -3;
   }
-  const size_t wrote = std::fwrite(data, 1, (size_t)len, f);
+  const size_t wrote = std::fwrite(src.data(), 1, (size_t)len, f);
   std::fclose(f);
-  if (wrote != (size_t)len) return -3;
+  if (wrote != (size_t)len) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：只写进 %zu/%d 字节 → %s", wrote, len, path);
+    return -3;
+  }
 
   int loaded = 0, rejected = 0;
   lua_sandbox_reload(dir, &loaded, &rejected);
+  // 成功不记录（日志铁律 2）；只有全被拒才算失败
   return (rejected > 0 && loaded == 0) ? -2 : 0;
 }
 

@@ -176,6 +176,25 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           gomobile init
 
+      - name: 12.5 LuaJIT（模块 7，编不出来就降级，不阻塞）
+        run: |
+          set +e
+          TC=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+          git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git /tmp/luajit 2>&1 | tail -2
+          cd /tmp/luajit || exit 0
+          make -j4 HOST_CC="gcc" \
+            CC="$TC/aarch64-linux-android26-clang" \
+            TARGET_SYS=Linux TARGET_FLAGS="-D__ANDROID_API__=26 -fPIC" \
+            BUILDMODE=static amalg 2>&1 | tail -25
+          if [ -f src/libluajit.a ]; then
+            mkdir -p "$GITHUB_WORKSPACE/third_party/lua/lib" "$GITHUB_WORKSPACE/third_party/lua/include"
+            cp src/libluajit.a "$GITHUB_WORKSPACE/third_party/lua/lib/"
+            cp src/lua.h src/lauxlib.h src/lualib.h src/luaconf.h "$GITHUB_WORKSPACE/third_party/lua/include/"
+            echo "✓ LuaJIT 编好了：$(ls -lh src/libluajit.a | awk '{print $5}')"
+            echo "LUAJIT_OK=1" >> $GITHUB_ENV
+          else
+            echo "⚠ LuaJIT 没编出来，本次走 stub（导入/校验照常，执行返回 -2）"
+          fi
       - name: 13. 黑匣子铁律闸门
         run: |
           grep -qF '#define LOGI(...) ((void)0)' core/src/common/log.h
