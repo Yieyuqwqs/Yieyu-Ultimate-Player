@@ -21,12 +21,15 @@ package main
 import "C"
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
-
-	"net/http"
 )
 
 const (
@@ -35,6 +38,43 @@ const (
 	reqTimeout = 12 * time.Second
 )
 
+// Android 上没有 /etc/ssl/certs，Go 的默认根证书池会是空的 ——
+// 表现就是所有 https 请求都 x509: unknown authority（搜索因此永远返回 []）。
+// 这里显式把系统证书目录读进根池：Android 14 起证书在 conscrypt apex 里，旧版在 /system。
+func loadAndroidRoots() *x509.CertPool {
+	pool := x509.NewCertPool()
+	dirs := []string{
+		"/apex/com.android.conscrypt/cacerts",
+		"/system/etc/security/cacerts",
+		"/etc/security/cacerts",
+	}
+	n := 0
+	for _, d := range dirs {
+		ents, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if e.IsDir() {
+				continue
+			}
+			pem, err := os.ReadFile(filepath.Join(d, e.Name()))
+			if err != nil {
+				continue
+			}
+			if pool.AppendCertsFromPEM(pem) {
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		if sys, err := x509.SystemCertPool(); err == nil && sys != nil {
+			return sys
+		}
+	}
+	return pool
+}
+
 var client = &http.Client{
 	Timeout: reqTimeout,
 	Transport: &http.Transport{
@@ -42,6 +82,8 @@ var client = &http.Client{
 		MaxIdleConnsPerHost: 2,
 		IdleConnTimeout:     30 * time.Second,
 		ForceAttemptHTTP2:   true,
+		// Android 上没有 /etc/ssl/certs：必须显式给根池，否则 https 全 unknown authority
+		TLSClientConfig: &tls.Config{RootCAs: loadAndroidRoots()},
 	},
 }
 

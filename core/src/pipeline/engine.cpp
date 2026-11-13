@@ -36,6 +36,8 @@ void  yieyu_fetch_free(char* p);
 extern "C" {
 int  yieyu_license_has_pubkey(void);
 int  yieyu_store_open(const char* path);
+char* yieyu_music_last_error(void);
+void  yieyu_fetch_free(void* p);
 int  yieyu_store_count(void);
 void yieyu_store_close(void);
 }
@@ -298,6 +300,13 @@ void Engine::SearchWorker() {
       yieyu_fetch_free(js);
     }
     if (body.empty()) body = "[]";
+    if (body == "[]") {
+      char* why = yieyu_music_last_error();
+      if (why) {
+        bb_write(YIEYU_LOG_ERROR, "[5] 搜歌失败 kw=%s 原因=%s", kw.c_str(), why);
+        yieyu_fetch_free(why);
+      }
+    }
     PushEvent('S', body);
 #else
     PushEvent('E', "本次构建没带 libyieyu_fetch.so（搜歌不可用）");

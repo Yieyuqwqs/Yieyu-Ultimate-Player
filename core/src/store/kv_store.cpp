@@ -156,13 +156,53 @@ int compact_locked() {
 
 extern "C" {
 
+// 从 /proc/self/cmdline 推导包名（平台通道没给目录时的兜底，真机上踩过）
+static int derivePkgDir(char* out, size_t cap) {
+  FILE* f = fopen("/proc/self/cmdline", "rb");
+  if (!f) return -1;
+  char name[256] = {0};
+  const size_t n = fread(name, 1, sizeof(name) - 1, f);
+  fclose(f);
+  if (n == 0) return -2;
+  for (size_t i = 0; i < n; ++i) {
+    if (name[i] == ':') { name[i] = 0; break; }
+  }
+  if (!name[0]) return -3;
+  snprintf(out, cap, "/data/user/0/%s/files", name);
+  return 0;
+}
+
 int kv_open(const char* dir) {
   std::lock_guard<std::mutex> lk(g_mu);
-  if (!dir || !*dir) return -1;
   if (g_fd >= 0) return 0;
-  g_path = std::string(dir) + "/yieyu.kv";
-  g_fd = ::open(g_path.c_str(), O_RDWR | O_CREAT, 0600);
-  if (g_fd < 0) { set_err("open", errno); LOGE("[20] 存储打不开：%s (%s)", g_path.c_str(), strerrno()); return -2; }
+
+  // 候选路径挨个试：给定目录 → /proc 推导 → /data/data 别名
+  char cand[4][560];
+  int nc = 0;
+  if (dir && *dir) snprintf(cand[nc++], sizeof(cand[0]), "%s", dir);
+  char d2[512] = {0};
+  if (derivePkgDir(d2, sizeof(d2)) == 0) {
+    snprintf(cand[nc++], sizeof(cand[0]), "%s", d2);
+    char alias[560];
+    snprintf(alias, sizeof(alias), "%s", d2);
+    char* p = std::strstr(alias, "/data/user/0/");
+    if (p) {
+      snprintf(alias, sizeof(alias), "/data/data/%s", d2 + std::strlen("/data/user/0/"));
+      snprintf(cand[nc++], sizeof(cand[0]), "%s", alias);
+    }
+  }
+  if (nc == 0) return -1;
+
+  for (int i = 0; i < nc; ++i) {
+    std::string path = std::string(cand[i]) + "/yieyu.kv";
+    const int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0600);
+    if (fd < 0) continue;
+    g_path = path;
+    g_fd = fd;
+    LOGE("[20] 存储已打开：%s（候选 %d/%d）", g_path.c_str(), i + 1, nc);
+    break;
+  }
+  if (g_fd < 0) { set_err("open", errno); LOGE("[20] 存储打不开（试了 %d 条路径，最后一次 errno=%d）", nc, errno); return -2; }
   if (rebuild_index() != 0) { ::close(g_fd); g_fd = -1; return -3; }
   return 0;
 }

@@ -1598,9 +1598,19 @@ int ml_selftest(void) {
   void* vm = ml_new();
   if (!vm) return -1;
   const int rc = ml_load(vm, "selftest", kScript, std::strlen(kScript));
-  if (rc != 0) { ml_free(vm); return -2; }
+  if (rc != 0) {
+    // 把解析/执行错误写进黑盒：真机上只有这一条路能看见解释器到底卡在哪
+    const char* e = ml_error(vm);
+    bb_write(YIEYU_LOG_ERROR, "[7] 自检脚本加载失败 rc=%d err=%s", rc, e ? e : "(null)");
+    ml_free(vm);
+    return -2;
+  }
   char buf[16] = {0};
   const int cr = ml_call(vm, "probe", nullptr, 0, buf, sizeof(buf));
+  if (cr != 0) {
+    const char* e = ml_error(vm);
+    bb_write(YIEYU_LOG_ERROR, "[7] 自检脚本调用失败 cr=%d err=%s", cr, e ? e : "(null)");
+  }
   const bool ok = cr == 0 && std::strcmp(buf, "ok") == 0;
   ml_free(vm);
   return ok ? 0 : -3;

@@ -20,6 +20,9 @@ package main
 import "C"
 
 import (
+	"crypto/tls"
+	"fmt"
+	"sync"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,11 +40,31 @@ const (
 	musicTimeout = 8 * time.Second
 )
 
+// 最后一次失败原因（给 C 侧写进黑盒，真机上才能看见到底卡在哪）
+var (
+	musicLastErrMu sync.Mutex
+	musicLastErr   string
+)
+
+func setMusicErr(format string, args ...interface{}) {
+	musicLastErrMu.Lock()
+	musicLastErr = fmt.Sprintf(format, args...)
+	musicLastErrMu.Unlock()
+}
+
+func getMusicErr() string {
+	musicLastErrMu.Lock()
+	defer musicLastErrMu.Unlock()
+	return musicLastErr
+}
+
 var musicClient = &http.Client{
 	Timeout: musicTimeout,
 	Transport: &http.Transport{
 		MaxIdleConns:        8,
 		MaxIdleConnsPerHost: 4,
+		TLSClientConfig:     &tls.Config{RootCAs: loadAndroidRoots()},   // 同 main.go：Android 根证书
+		ForceAttemptHTTP2:   true,
 		IdleConnTimeout:     45 * time.Second,
 	},
 }
@@ -79,6 +102,7 @@ func cwPost(path string, payload interface{}, out interface{}) bool {
 	}
 	req, err := http.NewRequest(http.MethodPost, cwBase+path, strings.NewReader(string(body)))
 	if err != nil {
+		setMusicErr("cw newRequest: %v", err)
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -87,17 +111,28 @@ func cwPost(path string, payload interface{}, out interface{}) bool {
 	req.Header.Set("User-Agent", "YieyuUltimate/0.2 (Android)")
 	resp, err := musicClient.Do(req)
 	if err != nil {
+		setMusicErr("cw do: %v", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		setMusicErr("cw status %d", resp.StatusCode)
 		return false
 	}
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, musicMaxBody))
 	if err != nil {
+		setMusicErr("cw read: %v", err)
 		return false
 	}
-	return json.Unmarshal(buf, out) == nil
+	if err := json.Unmarshal(buf, out); err != nil {
+		head := buf
+	if len(head) > 80 {
+		head = head[:80]
+	}
+		setMusicErr("cw json: %v (%s)", err, string(head))
+		return false
+	}
+	return true
 }
 
 // ── 通道 ②：gdstudio（GET 查询串）────────────────────────────────
@@ -105,23 +140,31 @@ func gdGet(params url.Values, out interface{}) bool {
 	params.Set("_t", strconv.FormatInt(time.Now().UnixMilli(), 10))
 	req, err := http.NewRequest(http.MethodGet, gdBase+"?"+params.Encode(), nil)
 	if err != nil {
+		setMusicErr("gd newRequest: %v", err)
 		return false
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Linux; Android 13) YieyuUltimate/0.2")
 	resp, err := musicClient.Do(req)
 	if err != nil {
+		setMusicErr("gd do: %v", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		setMusicErr("gd status %d", resp.StatusCode)
 		return false
 	}
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, musicMaxBody))
 	if err != nil {
+		setMusicErr("gd read: %v", err)
 		return false
 	}
-	return json.Unmarshal(buf, out) == nil
+	if err := json.Unmarshal(buf, out); err != nil {
+		setMusicErr("gd json: %v", err)
+		return false
+	}
+	return true
 }
 
 // 搜索：gdstudio 优先（它的 id 能被它自己的 url 接口解析 → 才真出声音），
@@ -269,6 +312,15 @@ func yieyu_music_url(csrc, cid, cmid, cq *C.char, outLen *C.int) *C.char {
 		}
 	}
 	return C.CString("")
+}
+
+//export yieyu_music_last_error
+func yieyu_music_last_error() *C.char {
+	e := getMusicErr()
+	if e == "" {
+		e = "no error"
+	}
+	return C.CString(e)
 }
 
 //export yieyu_music_version

@@ -9,7 +9,7 @@ mkdir -p "$OUT/go"
 
 # ★ SONAME 必须显式给：否则 CMake 链接时会把绝对路径写进 libyieyu_core.so 的 NEEDED 字段，
 #   装机后加载器按那个路径找库 → dlopen 失败 → 整个核心起不来（踩过）。
-go build -buildmode=c-shared -tags netgo \
+go build -buildmode=c-shared -tags osusergo \
   -ldflags="-s -w -extldflags=-Wl,-soname,libyieyu_fetch.so" \
   -o "$OUT/go/libyieyu_fetch.so" ./fetch
 ls -lh "$OUT/go/libyieyu_fetch.so"
