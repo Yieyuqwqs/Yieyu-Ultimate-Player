@@ -1,35 +1,31 @@
 #!/usr/bin/env node
 /**
- * 模块6：TypeScript → out/ts/。
+ * 模块6：不需要编译了。
  *
- * 依赖纪律：**只有编译器（typescript）**，没有运行时库、没有打包器（zod / axios / esbuild 全拔了）。
- *   · tsc 把 ts/src 编成 ESM 到 out/ts/esm（编译器是工具链，不是被引用进产物的依赖）
- *   · cleaner.mjs 只是一层再导出，给构建期脚本与回归用
- * 产物：out/ts/esm/**、out/ts/cleaner.mjs
+ * 依赖纪律：**零依赖**——没有 npm install、没有 tsc、没有 esbuild、没有 zod/axios。
+ * 源码就是普通 ESM（ts/src/*.mjs），Node 直接 import；这里只做两件事：
+ *   1) 把产物入口落到 out/ts/cleaner.mjs（构建期脚本用它）
+ *   2) 跑一遍脏样本回归（洗不动就直接红）
  */
-import { spawnSync } from 'node:child_process'
-import path from 'node:path'
 import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.resolve(ROOT, process.env.OUT || 'out')
-const ts = path.join(ROOT, 'ts')
-const esmOut = path.join(OUT, 'ts', 'esm')
-fs.mkdirSync(esmOut, { recursive: true })
-
-const run = (bin, args, cwd) => {
-  console.log('  $', bin, args.join(' '))
-  const r = spawnSync(bin, args, { cwd, stdio: 'inherit' })
-  if (r.status !== 0) { console.error(`失败: ${bin} ${args.join(' ')}`); process.exit(r.status || 1) }
-}
-
-if (!fs.existsSync(path.join(ts, 'node_modules'))) {
-  run('npm', ['install', '--no-audit', '--no-fund'], ts)
-}
-run(path.join(ts, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json', '--outDir', esmOut], ts)
-
-// 再导出层（不打包：没有第三方依赖，直接指向 tsc 产物就行）
 const shim = path.join(OUT, 'ts', 'cleaner.mjs')
-fs.writeFileSync(shim, `// 构建期再导出（模块6 的产物入口）\nexport * from './esm/clean/index.js'\nexport { SONG_FIELDS } from './esm/schema/fields.js'\n`)
+fs.mkdirSync(path.dirname(shim), { recursive: true })
+fs.writeFileSync(shim, `// 模块6 产物入口（零依赖，直接指向源码）\nexport * from '${pathToFileURL(path.join(ROOT, 'ts/src/clean/index.mjs')).href}'\nexport { SONG_FIELDS } from '${pathToFileURL(path.join(ROOT, 'ts/src/schema/fields.mjs')).href}'\n`)
 console.log(`  → ${path.relative(ROOT, shim)}`)
+
+const mod = await import(pathToFileURL(path.join(ROOT, 'ts/src/clean/index.mjs')).href)
+const dirty = JSON.stringify({ songs: [
+  { id: '1', mid: 'm1', name: '晴天', artist: '周杰伦', album: '叶惠美' },
+  { id: '', name: '' },
+  { id: 2, name: 3, artist: null },
+  'not-an-object',
+] })
+const out = mod.cleanSourceTrace({ source: 'wy', body: dirty })
+if (!Array.isArray(out) || out.length === 0) { console.error('✗ 清洗回归失败'); process.exit(1) }
+if (out.some((s) => !s || typeof s !== 'object')) { console.error('✗ 清洗结果混进非对象'); process.exit(1) }
+console.log(`  ✓ 清洗回归：脏样本 4 条 → 干净 ${out.length} 条（零依赖 ESM）`)

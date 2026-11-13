@@ -14,15 +14,14 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.resolve(ROOT, process.env.OUT || 'out')
-const ESM = path.join(OUT, 'ts/esm')
-const BUNDLE = path.join(OUT, 'ts/cleaner.mjs')
+const BUNDLE = path.join(ROOT, 'ts/src/clean/index.mjs')
 const DART_OUT = path.join(ROOT, 'app/lib/model/song.dart')
 
 const die = (m) => { console.error('✗ ' + m); process.exit(1) }
 
-const schemaPath = path.join(ESM, 'schema/fields.js')   // 纯数据模块，不依赖 zod
-if (!fs.existsSync(schemaPath)) die(`没有 ${schemaPath}（先跑 ./build.sh ts）`)
-if (!fs.existsSync(BUNDLE)) die(`没有 ${BUNDLE}（先跑 ./build.sh ts）`)
+const schemaPath = path.join(ROOT, 'ts/src/schema/fields.mjs')   // 纯数据 ESM，零依赖
+if (!fs.existsSync(schemaPath)) die(`没有 ${schemaPath}`)
+if (!fs.existsSync(BUNDLE)) die(`没有 ${BUNDLE}`)
 
 const schema = await import(pathToFileURL(schemaPath).href)
 const fields = schema.SONG_FIELDS

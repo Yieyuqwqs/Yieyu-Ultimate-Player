@@ -16,6 +16,7 @@
 #include "../store/kv_store.h"
 #include "../audio/aaudio_sink.h"
 #include "../script/lua_sandbox.h"
+#include "../script/minilua.h"
 #include "../ai/vocals.h"
 #include "../plugin/plugin_host.h"
 #include "player.h"
@@ -185,6 +186,9 @@ int Engine::Boot(const char* filesDir, const char* abi) {
 
   // ⑥ [11] 自校验：只记录结果（期望摘要在 APK 资产里，由 M1 调 Yieyu_IntegrityCheck 传进来）
   (void)yieyu_self_digest(selfDigest_);
+
+  luaSelftest_.store(ml_selftest());   // [7] 解释器自检（不进界面，进 Stats 与黑盒）
+  if (luaSelftest_.load() != 0) bb_write(YIEYU_LOG_ERROR, "[7] 解释器自检失败 rc=%d", luaSelftest_.load());
 
   state_.store(State::kReady);
   return 0;
@@ -442,13 +446,13 @@ void Engine::Stats(char* out, size_t cap) {
   Player& p = Player::Instance();
   std::snprintf(out, cap,
                 "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld "
-                "lic=%d integ=%d kv=%d store=%d gyro=%d dsd=%d resamp=%d target=%d plug=%d",
+                "lic=%d integ=%d kv=%d store=%d gyro=%d dsd=%d resamp=%d target=%d plug=%d lua=%d",
                 (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
                 (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns(),
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
                 (long long)p.DecodedChunks(), (int)lic_.load(), (int)integ_.load(),
                 kv_count(), (int)storeEntries_.load(), gyro_is_available(),
-                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate(), plugin_ready());
+                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate(), plugin_ready(), luaSelftest_.load());
 }
 
 }  // namespace yieyu

@@ -9,8 +9,7 @@ rust-version = "1.79"
 license = "MIT"
 
 [workspace.dependencies]
-# 没有 tokio：模块 3 用 std::thread，模块 19 用 std::fs；模块 10 只用 ring
-ring  = "0.17"
+# 全部零依赖：模块3/19 用 std，模块10 的 SHA-256/HMAC 也自己写
 
 [profile.release]
 opt-level = 3

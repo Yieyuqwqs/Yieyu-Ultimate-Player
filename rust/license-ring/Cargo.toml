@@ -4,11 +4,11 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "模块10：卡密验签与防抓包（ring）"
+description = "模块10：卡密验签（零依赖：自写 SHA-256/HMAC，不引 ring）"
 
 [lib]
 name = "yieyu_license"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ring = { workspace = true }
+# 零依赖：SHA-256 / HMAC 全部自写（rust 标准库足够）

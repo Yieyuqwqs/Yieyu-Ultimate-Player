@@ -49,17 +49,7 @@ if(EXISTS "${_zig}")
   add_compile_definitions(YIEYU_HAVE_MEM=1)
 endif()
 
-# ─── [7] LuaJIT：脚本引擎。有就真跑，没有就 stub（导入链路照常）──────
-set(LUAJIT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua")
-if(EXISTS "${LUAJIT_ROOT}/lib/libluajit.a" AND EXISTS "${LUAJIT_ROOT}/include/lua.h")
-  add_library(luajit STATIC IMPORTED)
-  set_target_properties(luajit PROPERTIES IMPORTED_LOCATION "${LUAJIT_ROOT}/lib/libluajit.a")
-  include_directories("${LUAJIT_ROOT}/include")
-  add_compile_definitions(YIEYU_HAVE_LUAJIT=1)
-  message(STATUS "[7] LuaJIT 已接入：脚本可以真正执行")
-else()
-  message(WARNING "[7] 没有 third_party/lua（LuaJIT）→ 脚本只能导入+校验，执行返回 -2")
-endif()
+# ─── [7] Lua 沙箱：解释器是我们自己的（core/src/script/minilua.cpp），不引 LuaJIT ───
 
 # ─── [9] 脚本 HTTP：Go 编的 libyieyu_fetch.so（自带 TLS，替代 curl）──
 set(_fetch "${YIEYU_OUT}/go/libyieyu_fetch.so")
@@ -106,7 +96,8 @@ set(SRC_NET     src/net/stream_http.c                 # [9] 自研 socket HTTP/1
                 src/net/song_uri.cpp)                  # [5]/[9] yieyu://song → 真直链
 set(SRC_STORE   src/store/kv_store.cpp)                # [20] 自研追加日志（唯一写者）
 set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
-set(SRC_SCRIPT  src/script/lua_sandbox.cpp)            # [7]
+set(SRC_SCRIPT  src/script/lua_sandbox.cpp              # [7] 沙箱（自有解释器）
+                src/script/minilua.cpp)                 # [7] Lua 子集解释器（零依赖）
 set(SRC_WASM    src/plugin/plugin_host.cpp)            # [8] 自研 YPFX 插件宿主（自有字节码）
 set(SRC_ASM     ../asm/neon_ct_compare.S)              # [12]
 set(SRC_AI      src/ai/vocals.cpp)                     # [18] 离线人声消除（Python 生成核）
@@ -124,7 +115,6 @@ endif()
 # ─── 头文件路径 ───────────────────────────────────────────────────────
 target_include_directories(yieyu_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/flatbuffers/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/eigen
   ${YIEYU_OUT}/gen/cpp
@@ -157,9 +147,6 @@ if(EXISTS "${_zig}")
   list(APPEND YIEYU_LIBS "${_zig}")
 endif()
 
-if(TARGET luajit)
-  list(APPEND YIEYU_LIBS luajit m)
-endif()
 if(TARGET yieyu_fetch)
   list(APPEND YIEYU_LIBS yieyu_fetch)
 endif()

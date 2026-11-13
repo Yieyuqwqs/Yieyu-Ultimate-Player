@@ -38,10 +38,11 @@ const tag = (s, col) => `${col}${s}${c.x}`.padEnd(24)
 const STEPS = [
   { id: 'doctor', deps: [], bin: 'node', desc: '工具链体检', out: [] },
 
-  { id: 'idl', deps: ['doctor'], bin: 'flatc', desc: '模块21 代码生成 + 契约真源校验',
-    cmd: () => ['bash', '-c',
-      `flatc --cpp --dart --rust --go --gen-object-api -o "${at('gen')}" ${fbs().join(' ')} && node tools/verify-idl.mjs`],
-    out: ['gen'], inputs: ['idl', 'tools/verify-idl.mjs'] },
+  { id: 'idl', deps: ['doctor'], bin: 'node', desc: '模块21 契约真源校验（零外部工具）',
+    // 不再需要 flatc：跨语言编解码是我们自己手写的（core/src/ipc/flatbuf_codec.h），
+    // idl/*.fbs 只作为契约真源，由 verify-idl.mjs 反查两端偏移与枚举。
+    cmd: () => ['node', 'tools/verify-idl.mjs'],
+    out: ['idl'], inputs: ['idl', 'tools/verify-idl.mjs'] },
 
   { id: 'zig', deps: ['doctor'], bin: 'zig', desc: '模块4 分配器静态库',
     cmd: () => ['zig', 'build', '-Dtarget=aarch64-linux-android', '-Doptimize=ReleaseFast', '--prefix', at('zig')],

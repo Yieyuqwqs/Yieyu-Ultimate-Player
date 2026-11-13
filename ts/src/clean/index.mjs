@@ -1,18 +1,15 @@
 /**
- * 【模块 6】洗数据：脏 JSON → 干净 Song[]
+ * 【模块6】洗数据：脏 JSON → 干净 Song[]（零依赖、零编译）
  *
- * 入口只有两个：
- *   cleanSourceTrace(trace)  —— 单个源站的原始 body
- *   cleanSearchPayload(json) —— 模块 5 交过来的 {traces:[...]} 整体
- *
- * 设计取向：**永不抛异常**。任何一条脏数据只是一个"坏样本"，丢掉继续。
- * 因为这条链的出口是 UI 列表，一个源站挂掉不许让整个搜索失败。
+ * 入口只有两个：cleanSourceTrace(trace) / cleanSearchPayload(json)
+ * 设计取向：**永不抛异常**。任何一条脏数据只是一个"坏样本"，丢掉继续 ——
+ * 这条链的出口是 UI 列表，一个源站挂掉不许让整个搜索失败。
  */
-import { validateSong, validateSearchPayload, type Song } from '../schema/song.js'
+import { validateSong, validateSearchPayload } from '../schema/song.mjs'
 
 const MAX_SONGS = 500
 
-function tryParse(body: string): unknown {
+function tryParse(body) {
   if (!body || body.length > 8 * 1024 * 1024) return null
   try {
     return JSON.parse(body)
@@ -22,12 +19,11 @@ function tryParse(body: string): unknown {
 }
 
 /** 通用兜底：源站结构千奇百怪，先按常见路径捞数组 */
-function pickArray(node: unknown): unknown[] {
+function pickArray(node) {
   if (Array.isArray(node)) return node
   if (node && typeof node === 'object') {
-    const obj = node as Record<string, unknown>
     for (const key of ['songs', 'data', 'result', 'list', 'tracks', 'itemlist']) {
-      const v = obj[key]
+      const v = node[key]
       if (Array.isArray(v)) return v
       if (v && typeof v === 'object') {
         const nested = pickArray(v)
@@ -38,22 +34,21 @@ function pickArray(node: unknown): unknown[] {
   return []
 }
 
-/** 把任意形状的一条记录映射成候选 Song（宽松映射，交给 Zod 最终裁决） */
-function toCandidate(raw: unknown, source: string): unknown {
+/** 把任意形状的一条记录映射成候选 Song（宽松映射，最终交给 validateSong 裁决） */
+function toCandidate(raw, source) {
   if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, any>
+  const r = raw
   const id = r.id ?? r.songid ?? r.songmid ?? r.hash ?? r.songId
   if (id === undefined || id === null) return null
   const title = r.name ?? r.title ?? r.songname ?? r.songName
   if (!title) return null
   const artists = r.artists ?? r.ar ?? r.singer ?? r.singers
   const artist = Array.isArray(artists)
-    ? artists.map((a: any) => a?.name ?? a ?? '').join(' / ')
-    : (typeof artists === 'string' ? artists : '')
+    ? artists.map((a) => a?.name ?? a ?? '').join(' / ')
+    : typeof artists === 'string' ? artists : ''
   const albumObj = r.album ?? r.al
   const durationMs =
-    Number(r.duration ?? r.dt ?? r.interval ?? r.timelen ?? 0) ||
-    Number(albumObj?.duration ?? 0)
+    Number(r.duration ?? r.dt ?? r.interval ?? r.timelen ?? 0) || Number(albumObj?.duration ?? 0)
   return {
     id: String(id),
     source,
@@ -69,23 +64,23 @@ function toCandidate(raw: unknown, source: string): unknown {
   }
 }
 
-function normalizeUrl(u: unknown): string | undefined {
+function normalizeUrl(u) {
   if (typeof u !== 'string' || !u) return undefined
   if (u.startsWith('//')) return 'https:' + u
   if (!/^https?:\/\//.test(u)) return undefined
-  return u
+  return u.slice(0, 2048)
 }
 
-export function cleanSourceTrace(trace: { source: string; body: string }): Song[] {
+/** 单个源站的原始 body → Song[] */
+export function cleanSourceTrace(trace) {
   const parsed = tryParse(trace.body)
   if (!parsed) return []
-  const list = pickArray(parsed)
-  const out: Song[] = []
-  for (const raw of list) {
+  const out = []
+  for (const raw of pickArray(parsed)) {
     const cand = toCandidate(raw, trace.source)
     if (!cand) continue
-    const clean = validateSong(cand)   // 手写校验（零依赖）
-    if (!clean) continue               // 坏样本静默丢弃
+    const clean = validateSong(cand)
+    if (!clean) continue
     out.push(clean)
     if (out.length >= MAX_SONGS) break
   }
@@ -93,11 +88,9 @@ export function cleanSourceTrace(trace: { source: string; body: string }): Song[
 }
 
 /** 跨源去重：title+artist 归一化后同一首只留码率最高的那条 */
-export function dedupe(songs: Song[]): Song[] {
-  const rank: Record<Song['quality'], number> = {
-    unknown: 0, '128k': 1, '320k': 2, flac: 3, hires: 4, dsd: 5,
-  }
-  const best = new Map<string, Song>()
+export function dedupe(songs) {
+  const rank = { unknown: 0, '128k': 1, '320k': 2, flac: 3, hires: 4, dsd: 5 }
+  const best = new Map()
   for (const s of songs) {
     const key = `${s.title.toLowerCase()}|${s.artist.toLowerCase()}`
     const prev = best.get(key)
@@ -106,13 +99,11 @@ export function dedupe(songs: Song[]): Song[] {
   return [...best.values()]
 }
 
-/** 模块 5 的整体交接格式 */
-export function cleanSearchPayload(json: string): Song[] {
+/** 模块5 的整体交接格式 */
+export function cleanSearchPayload(json) {
   const traces = validateSearchPayload(tryParse(json))
   if (!traces.length) return []
-  const all: Song[] = []
+  const all = []
   for (const t of traces) all.push(...cleanSourceTrace(t))
   return dedupe(all).slice(0, MAX_SONGS)
 }
-
-export type { Song }
