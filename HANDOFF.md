@@ -1,56 +1,69 @@
-# HANDOFF · 接手必读（2026-11-13 18:3x 交接版）
+# HANDOFF · 接手必读（2026-11-13 19:xx 修复版）
 
-## 0. 当前交接（老板要求：只交接，不再验证）
+## 0. 当前状态（2026-11-13 19:xx，本轮修复之后）
 
-### 0.1 一句话状态
-仓库 `Yieyuqwqs/Yieyu-Ultimate-Player` 的**架构骨架 + 云端构建**是通的；
-**播放链路（13→15）与脚本链路（导入→执行→取地址）代码已写完但未在真机确认过**。
-本机没有 NDK / Flutter / 编译器，所有验证只能靠 GitHub Actions（一次 ~15 分钟），
-所以最需要接手人做的第一件事就是**装机实测**，而不是继续读代码。
+### 0.1 三句话
 
-### 0.2 最后一个已绿的构建
-`run #57`（`7858d1c`，15m，双绿）产物：`/sdcard/Download/YieyuUltimate-run57-arm64.apk`。
-它包含：播放链路（13 平台解码 + 15 AAudio + player 调度）、脚本导入兜底、
-脚本执行入口 `Yieyu_ScriptCall`、开发者面板（本地测试音 / 直链 / 脚本调用 / 状态行）。
+1. 上一版**不是"功能没验"，是"功能不存在"**：播放链路死在 PCM 环的一个缓存变量上，
+   脚本沙箱从来没被初始化过，卷积混响全仓 0 行。
+2. 本轮修掉了：环永久静音、Lua 沙箱点火、导入结果提示直落、命令 op 全错位；
+   并真接上了 `搜歌 → 直链解析 → 解码 → 出声` 这条链（Go 发真网络请求）。
+3. **还没在真机上听到声音** —— 本轮只做了逐行静态自查 + 环算法的 JS 等价模拟。
+   谁要说"已经好了"，请先拿出真机录音/日志。
 
-### 0.3 之后的两次构建（**都在 flutter 步骤红，原因已定位，代码已改，构建未复验**）
-| run | commit | 红在哪 | 原因 |
-|---|---|---|---|
-| #58 | `81b86f2` | flutter | `dev_panel.dart`：在非 `async` 的 `_play()` 里写了 `await` |
-| #59 | `a3086cc` | 同上（同一处，构建时还没修） | 同上 |
-最新已推：把 `_play()` 改成 `Future<void> _play() async`（与 #59 的 app_paths 重构同一提交），
-下一次构建（#60 起）应当全绿——**但没跑完就交接了，接手人先看这次构建结果**。
+### 0.2 本轮修了什么
 
-### 0.4 待真机确认的三件事（按顺序，一次做完）
-1. **导入脚本**：设置 → 导入 Lua 脚本 → 选 `yieyu.lua`。
-   期望：提示「脚本导入成功，已就绪」；若失败，去开发者面板看 `Yieyu_LastError()`
-   （会写清 errno / 黑名单命中项 / loaded=0）。
-2. **能不能放**：开发者面板 →「本地测试音」（不联网，验 13+15）→ 再粘 `/sdcard/pv.txt` 里的直链试真歌。
-3. **脚本能不能出地址**：面板「用脚本取播放地址」→ 脚本名 `yieyu.lua` / 源 `wy` / 歌曲 id 填一个 → 调用
-   `get_music_url` → 期望显示一个 URL，「播放该地址」能出声。
-   （该脚本走 `https://c.wwwweb.top/music/url`，需要它的 `X-Api-Key` 有效。）
+| 现象 | 真因 | 修法 |
+|---|---|---|
+| 放歌约 1.5 秒后**永久静音**，只能杀进程 | `core/src/common/ring.h`：`rCached_` 构造后=0 且再没刷新 → `write()` 永远返回 0 | write() 每次 acquire 重读 `r_`；`writable()/readable()` 不依赖缓存 |
+| 脚本导入成功却永远执行不了 | `lua_sandbox_init()` **全仓零调用点** → `g_L` 恒为 nullptr | `Engine::Boot` 里点火 + 启动即 reload |
+| 导入成功也弹"导入失败" | `settings_page.dart` 的 switch 四个 case 都没 `break`（Dart 直落） | 改成互斥 if/else |
+| 按播放没反应、按暂停反而继续 | Dart 侧 play=0/pause=1/next=2/prev=3，引擎把 1 当 resume、2 当 pause | op 与 Dart 枚举对齐 + `'YJSC'` 魔数校验 |
+| 搜歌结果永远上不了屏 | `Engine::DrainEvents()` 固定 `return 0` | 异步搜歌线程 + 事件队列（`S`/`E` 帧） |
+| 点歌没有可播地址 | 全仓没有任何 URL 解析 | Go `yieyu_music_url` + `yieyu://song?source=&id=&mid=` + **解码线程**解析 |
+| 首页 EQ 曲线永远是平的 | `g_outDb` 从来没被写过 | `Snapshot()` 调 `eq31_points()` 真填 31 点 |
+| http 直链被网络策略拒 | targetSdk >= 28 默认禁明文 | manifest 注入 `usesCleartextTraffic="true"` |
+| 拿不到诊断 | `Stats()` 只有 4 个字段 | 加 `ring=水位/容量 wfail= chunks=`（活性证据） |
 
-### 0.5 交接时知道的**真实风险点**（别再猜，按这个查）
-- **路径**：已经收成唯一真相 `core/src/common/app_paths.{h,cpp}`（`yp_home/yp_scripts/yp_data/yp_ensure`）。
-  若导入仍失败，先看 `Yieyu_LogDir()` 给的是公共目录还是私有目录，再看 errno——
-  **不要**再去加第二个 mkdir 或第二条 fallback 分支（那正是这次连红三次的来源）。
-- **真机上公共目录不可写**（重装 App 会撤销「所有文件访问」），实测结论：`/sdcard/yieyu` 里**一条 .log 都没有**
-  → 黑匣子也在私有目录。所以**私有目录必须能完整工作**，这是设计前提，不是异常分支。
-- **脚本黑名单只有一份实现**：`lua_sandbox_banned_text()`（jsb 导入时用、扫描时用）。
-  老板那份 `yieyu.lua` 9 条一条都没命中，导入失败与内容无关。
-- **脚本网络语义**：`http_post(url, headers表, body)` 与 `local body, code = http_post(...)` 都必须成立
-  （两种参数顺序 + 返回 status）——Go 侧 `yieyu_fetch_ex(..., outStatus)` 提供状态码。
-- **AAudio**：真机独占模式常被拒，代码按 独占+burst → 独占 → 共享+burst → 共享 四级降级；
-  播放失败原因会进 `Yieyu_LastError()`，面板点播放后 1.5s 自动显示。
+### 0.3 真机验证顺序（按这个来，别猜）
 
-### 0.6 走弯路的教训（写给自己，也写给接手人）
-1. 本机无编译器 → 每次盲改都要一次 15 分钟构建，**同一个问题连发三版**就是这么来的。
-   正确姿势：先把整条链（UI → JSB → 模块 → 磁盘/网络）读一遍，**一次改到位**；
-2. Dart 侧最容易红的三类：`await` 放错函数、`ByteData` 第三参是 `Endian`、`num`/`double` 混用；
-3. C/C++ 侧最容易红的两类：`__INTRODUCED_IN` 的 API 级别、`extern "C"` 漏写导致符号被 mangle；
-4. 不要在三个地方各决定一次「往哪写」——这是本次所有故障的共同根因。
+1. 装本次构建的 APK；
+2. 设置 → 标题连点 5 次 → 开发者面板 →「本地测试音」：
+   - 听到 3 秒 440Hz = [13] 解码 + [15] AAudio + 解码线程 + PCM 环 **全通**；
+   - 状态行里 `chunks=` 必须一直涨（不涨 = 解码线程没干活）、`wfail=` 必须一直是 0；
+3. 首页搜「晴天」→ 出列表（真网络）→ 点一首 → 应出声；
+4. 没声音就看面板那一行：`st=`（0 空闲/1 打开/2 播放/3 暂停/4 出错）、`underrun=`、
+   `ring=`、`wfail=`，再看 `Yieyu_LastError()` 里的原因。
 
----
+### 0.4 仍然没做（不许再说"写好了"）
+
+- **卷积混响：0 行。** 没有 IR 加载、没有 FFT、没有 FIR。`dsp/hrtf_8d.cpp` 只是等功率声像，
+  文件里那两张 `g_hrirL/R` 表**一次都没被用过**；`docs/DATAFLOW.md` 写的
+  "4 抽头 ER + 16 抽头尾"是纸面。
+- **黑胶** = `/* TODO(P3) */`；**头追 8D** = `hrtf8d_set_pose()` 没有任何调用点（姿态进不去）。
+- **本地曲库 UI**：不存在。只有开发者面板里的「选本地音频」。
+- 队列播下一首 / 搜索翻页 / 歌词 / 离线缓存：都没有。
+- Rust 三件套（gesture/license/store）没进 APK，CMake 走的是空实现。
+
+### 0.6 本次构建（可复现的事实）
+
+| 项 | 值 |
+|---|---|
+| commit | `b33787c` |
+| 构建 | GitHub Actions run **#61**，双绿 |
+| APK | `/sdcard/Download/YieyuUltimate-run61-arm64.apk`（16.7 MB） |
+| 离线自检（不装也能验） | 环修复文案 ✓ / 直链解析层 ✓ / `yieyu_music_search` ✓ / `Yieyu_Search`+`Yieyu_PlaySong` 导出 ✓ / Go 里 `c.wwwweb.top`+`/music/search` ✓ / LuaJIT 已链接 ✓ / manifest 有 `usesCleartextTraffic`+INTERNET ✓ |
+
+**注意**：以上只证明"包里有这些东西"，**不证明真机出声**。下一步必须装机实测（§0.3）。
+
+### 0.5 本机不能编译（这是所有"假绿"的根源）
+
+本机没有 NDK / Flutter / Rust / Go / 编译器，**唯一构建环境是 GitHub Actions**（一次约 12~15 分钟）。
+所以规矩只有一条：
+
+> 改完 → 推 → 等 CI → 拉 APK → 装机 → 看面板；**没走完这五步的结论一律不准写进文档。**
+
+
 
 ## 0.9 历史记录（以下内容按时间倒序保留，最新结论见上面 §0）
 
