@@ -31,6 +31,7 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_SLOPPINESS: include_file_ctime,include_file_mtime,time_macros
       CCACHE_BASEDIR: ${{ github.workspace }}
+      GRADLE_USER_HOME: /home/runner/.gradle
     steps:
       - name: 0. 取代码（fetch-depth 0 供路径过滤）
         uses: actions/checkout@v4
@@ -91,15 +92,32 @@ jobs:
           key: go-v2-${{ hashFiles('go/**') }}
           restore-keys: go-v2-
 
-      - name: 5. Gradle + pub
+      - name: 5. Gradle + pub（含 build-cache，APK 步骤提速的关键）
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ~/.gradle/daemon
             ~/.pub-cache
-          key: gradle-v2-${{ hashFiles('app/pubspec.yaml','android/**') }}
-          restore-keys: gradle-v2-
+          key: gradle-v3-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs','android/**') }}
+          restore-keys: |
+            gradle-v3-
+            gradle-v2-
+
+      - name: 5.5 Android SDK 额外组件（NDK/cmake/build-tools）
+        # 不要缓存整个 /usr/local/lib/android/sdk（10GB+，恢复比下载慢）。
+        # 只缓存 Gradle 会自己装的那几个目录；配合 patch_gradle.mjs 删掉 ndkVersion 后，
+        # 正常情况这里应该 0 命中、也不需要下载。
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk
+            /usr/local/lib/android/sdk/cmake
+            /usr/local/lib/android/sdk/build-tools
+            /usr/local/lib/android/sdk/licenses
+          key: sdkextra-v1-${{ runner.os }}-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs') }}
+          restore-keys: sdkextra-v1-
 
       - name: 6. 强制全量时清空 out/
         if: inputs.force
@@ -234,6 +252,28 @@ jobs:
             ~/.cache/go-build
             ~/go/pkg/mod
           key: go-v2-${{ hashFiles('go/**') }}
+
+      - name: 26. 保存 Gradle（失败也存）
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.gradle/daemon
+            ~/.pub-cache
+          key: gradle-v3-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs','android/**') }}-${{ github.run_id }}
+
+      - name: 27. 保存 SDK 额外组件（失败也存）
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk
+            /usr/local/lib/android/sdk/cmake
+            /usr/local/lib/android/sdk/build-tools
+            /usr/local/lib/android/sdk/licenses
+          key: sdkextra-v1-${{ runner.os }}-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs') }}-${{ github.run_id }}
 
       - name: 21. 失败时留日志
         if: failure()

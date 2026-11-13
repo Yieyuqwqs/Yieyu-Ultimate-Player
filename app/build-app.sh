@@ -8,6 +8,8 @@ cd "$HERE"
 
 # 1.5) 黑匣子要写 /storage/emulated/0/yieyu → 注入存储权限（幂等）
 node patch_manifest.mjs || true
+# 1.55) 干掉 ndkVersion 钉死 + 打开 gradle build cache（省掉 ~1GB NDK 下载）
+node patch_gradle.mjs || true
 
 # 1.6) R8 规则：保住 JNI 名字（Flutter release 会跑 R8 裁 Java/Kotlin 层）
 if [[ -f android/app/proguard-rules.pro ]]; then
