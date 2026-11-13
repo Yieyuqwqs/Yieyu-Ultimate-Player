@@ -1,7 +1,7 @@
 // Package main 【模块 9 的 HTTP 实现 / 模块 5 的共用出口】
 //
 // 为什么不在这里用 C 的 libcurl：
-//   curl 要 HTTPS 就得连带 OpenSSL 或 mbedTLS 交叉编译（好几 MB + 一堆坑）。
+//   libcurl 要 HTTPS 就得连带 OpenSSL 或 mbedTLS 交叉编译（好几 MB + 一堆坑）。
 //   Go 标准库自带 TLS 1.3 / HTTP2 / 连接池，`-buildmode=c-shared` 直接给 C ABI，
 //   交叉编译零外部依赖 —— 这是这套架构里最省事也最稳的一条路。
 //

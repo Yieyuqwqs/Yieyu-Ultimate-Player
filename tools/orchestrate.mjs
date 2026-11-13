@@ -5,7 +5,6 @@
  *
  *   ./build.sh                        # 跑全部（缺工具链的步骤 SKIP 而不是 FAIL）
  *   ./build.sh doctor                 # 只体检
- *   ./build.sh zig rust idl native    # 只跑指定步骤（含其依赖）
  *   ./build.sh --dry-run              # 只打印将要执行的命令
  *   ./build.sh --clean native         # 只清某步产物
  */
@@ -48,7 +47,7 @@ const STEPS = [
     cmd: () => ['bash', 'build.sh'],
     cwd: 'go', env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, ANDROID_HOME: process.env.ANDROID_HOME || '', ANDROID_SDK_ROOT: process.env.ANDROID_SDK_ROOT || '' }), out: ['go'], inputs: ['go'] },
 
-  { id: 'ts', deps: ['doctor'], bin: 'npm', desc: '模块6 TS 清洗层 → cleaner.mjs',
+  { id: 'ts', deps: ['doctor'], bin: 'node', desc: '模块6 TS 清洗层 → cleaner.mjs',
     cmd: () => ['node', 'tools/ts-build.mjs'], out: ['ts'], inputs: ['ts'] },
 
   { id: 'schema', deps: ['ts'], bin: 'node', desc: '模块6 TS schema → Dart 模型 + 清洗回归',
@@ -69,7 +68,8 @@ const STEPS = [
     cmd: () => ['node', 'tools/obfuscate.mjs'], out: ['obfuscate'], inputs: ['out/native/arm64'] },
 
   { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'schema', 'wasm', 'lua'], bin: 'flutter', desc: '模块1/2 出 APK',
-    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/rust', 'out/go', 'out/ts', 'out/wasm'] },
+    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }),
+    out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/go', 'out/ts', 'out/plugins'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',
     cmd: () => ['node', 'tools/verify.mjs'], out: ['verify'] }

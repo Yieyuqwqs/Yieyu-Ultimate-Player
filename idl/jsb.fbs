@@ -2,7 +2,8 @@
 // 改这个文件 = 改契约：必须同步把 core/src/jsb/jsb.h 的 YIEYU_JSB_ABI +1，
 // 并重新生成四端代码（--cpp --dart --rust --go）。任何一端手改生成物 = 打回。
 //
-// 生成：./build.sh idl
+// 生成：不需要 flatc —— 编解码由 core/src/ipc/flatbuf_codec.{h,cpp} 手写；
+//       CI 用 node tools/verify-idl.mjs 反查两端偏移与枚举（.fbs 只作契约真源）
 //
 // ⚠️ 顺序要求：root_type / file_identifier 必须写在被引用的 table **之后**，
 //    否则 flatc 报 "unknown root type"（踩过）。

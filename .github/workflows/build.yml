@@ -36,11 +36,6 @@ jobs:
     env:
       YIEYU_OFFLINE_ASSETS: 'ON'
       YIEYU_JOBS: '4'
-      CCACHE_DIR: /home/runner/.ccache
-      SCCACHE_DIR: /home/runner/.cache/sccache
-      CCACHE_COMPILERCHECK: content
-      CCACHE_SLOPPINESS: include_file_ctime,include_file_mtime,time_macros
-      CCACHE_BASEDIR: ${{ github.workspace }}
       GRADLE_USER_HOME: /home/runner/.gradle
     steps:
       - name: 0. 取代码（fetch-depth 0 供路径过滤）
@@ -91,24 +86,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: out
-          key: out-v2-${{ hashFiles('core/**','asm/**','idl/**','go/**','ts/**','app/**','tools/**','build.sh') }}
-          restore-keys: out-v2-
+          key: out-v3-${{ hashFiles('core/**','asm/**','idl/**','go/**','ts/**','app/**','tools/**','build.sh') }}
+          restore-keys: out-v3-
 
-      - name: 2. ccache
-        id: ccache
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.ccache
-          key: ccache-v2-${{ hashFiles('core/**','asm/**') }}-${{ github.run_id }}
-          restore-keys: ccache-v2-
 
-      - name: 3. sccache
-        id: sc
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.cache/sccache
-          key: sccache-v2-${{ hashFiles('rust/**') }}-${{ github.run_id }}
-          restore-keys: sccache-v2-
 
       - name: 4. Go 构建缓存
         id: gocache
@@ -117,8 +98,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-v2-${{ hashFiles('go/**') }}
-          restore-keys: go-v2-
+          key: go-v3-${{ hashFiles('go/**') }}
+          restore-keys: go-v3-
 
       - name: 5. Gradle + pub（含 build-cache，APK 步骤提速的关键）
         id: gcache
@@ -130,10 +111,10 @@ jobs:
             ~/.pub-cache
           # ★ 固定 key：内容变了也复用同一份缓存，增量交给 Gradle 自己判断。
           #   之前 key 里带 hashFiles(pubspec)，加一个依赖就整份缓存作废 → 每次都重下。
-          key: gradle-v4-${{ runner.os }}
+          key: gradle-v6-${{ runner.os }}
           restore-keys: |
-            gradle-v4-
-            gradle-v3-
+            gradle-v6-
+            gradle-v5-
 
       - name: 6. 强制全量时清空 out/
         if: inputs.force
@@ -170,11 +151,7 @@ jobs:
           echo "NDK 版本: $(basename "$ANDROID_NDK_LATEST_HOME")"
           echo "NDK=$ANDROID_NDK_LATEST_HOME"
 
-      - name: 12. ccache（外部工具只留 ccache，flatc 已不需要）
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ccache
-          ccache --version | head -1
+      # 外部工具：ccache / flatc / zip / LuaJIT 全部下线（要么自己写，要么不需要）
 
       # LuaJIT 已下线：模块 7 用自研 Lua 子集解释器（core/src/script/minilua.cpp）
 
@@ -250,16 +227,8 @@ jobs:
         run: |
           echo "out/      : ${{ steps.ocache.outputs.cache-hit }}"
           echo "gradle    : ${{ steps.gcache.outputs.cache-hit }}"
-          echo "ccache    : ${{ steps.ccache.outputs.cache-hit }}"
-          echo "sccache   : ${{ steps.sc.outputs.cache-hit }}"
           echo "go        : ${{ steps.gocache.outputs.cache-hit }}"
 
-      - name: 20.5 缓存命中情况
-        if: always()
-        run: |
-          echo "out/ 缓存命中: ${{ steps.ocache.outputs.cache-hit }}"
-          echo "变更: native=${{ steps.chg.outputs.native }} go=${{ steps.chg.outputs.go }} ts=${{ steps.chg.outputs.ts }} app=${{ steps.chg.outputs.app }}"
-          ccache --show-stats 2>/dev/null | head -8 || true
 
 
       # ── 显式保存（关键：job 失败时 actions/cache 默认**不保存**，
@@ -269,21 +238,9 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: out
-          key: out-v2-${{ hashFiles('core/**','rust/**','zig/**','asm/**','idl/**','go/**','ts/**','wasm/**','app/**','tools/**','build.sh') }}
+          key: out-v3-${{ hashFiles('core/**','rust/**','zig/**','asm/**','idl/**','go/**','ts/**','wasm/**','app/**','tools/**','build.sh') }}
 
-      - name: 23. 保存 ccache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: /home/runner/.ccache
-          key: ccache-v2-${{ hashFiles('core/**','asm/**') }}-${{ github.run_id }}
 
-      - name: 24. 保存 sccache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: /home/runner/.cache/sccache
-          key: sccache-v2-${{ hashFiles('rust/**') }}-${{ github.run_id }}
 
       - name: 25. 保存 Go 缓存
         if: always()
@@ -292,7 +249,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-v2-${{ hashFiles('go/**') }}
+          key: go-v3-${{ hashFiles('go/**') }}
 
       - name: 26. 保存 Gradle（失败也存）
         if: always()
@@ -302,7 +259,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/daemon
             ~/.pub-cache
-          key: gradle-v4-${{ runner.os }}-${{ github.run_id }}
+          key: gradle-v6-${{ runner.os }}-${{ github.run_id }}
 
       - name: 21. 失败时留日志
         if: failure()
