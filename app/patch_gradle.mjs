@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 /**
- * flutter create 生成的安卓壳子有三个"隐形成本"，每次 CI 都要为它们下载几百兆到 1GB：
+ * flutter create 生成的安卓壳子有几个隐形成本，每次 CI 都要为它们下载几百兆到 1GB：
  *
- *   1. ndkVersion = flutter.ndkVersion  → 逼 Gradle 拉 NDK 25（~1GB）
- *      但我们**不用 Gradle 编 native**：C++ 是 CI 里用 CMake + NDK r27 单独交叉编译，
- *      产物直接塞进 jniLibs。所以这行必须删。
- *   2. build-tools / cmake 版本由插件钉死 → 与 runner 预装版本不一致就重新装
- *      改成 runner 预装的版本，直接命中。
- *   3. Gradle 没有开 build cache / parallel → 每次全量
- *      往 gradle.properties 里补上（幂等）。
+ *   1. ndkVersion = flutter.ndkVersion  → 逼 Gradle 拉 NDK 25（~1GB，而我们本来就有 NDK 27）
+ *      → 改成读环境变量 YIEYU_NDK_VERSION（CI 里就是预装 NDK 的目录名），命中即零下载。
+ *      注意：rive 的 Flutter 插件确实用 CMake 编 native，所以 NDK **不能删**，只能指对版本。
+ *   2. gradle.properties 没开 build cache / parallel → 每次全量
+ *   3. 签名用 debug → 每次签名不同，装不上（由 patchSigning 处理）
  *
- * 这个脚本在每次构建时跑，必须幂等。
+ * 幂等：每次构建都跑。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -24,15 +22,17 @@ function patchBuildGradle() {
     if (!fs.existsSync(p)) continue
     let s = fs.readFileSync(p, 'utf8')
     const before = s
-    // 1) 干掉 ndkVersion
-    s = s.replace(/^\s*ndkVersion\s*=.*$/gm, '    // ndkVersion 已移除：native 由 CI 的 CMake 交叉编译，不走 Gradle')
-    // 2) build-tools 对齐 runner 预装（AGP 8.5 默认 34.0.0）
+    const nativeVersion = 'System.getenv("YIEYU_NDK_VERSION") ?: flutter.ndkVersion'
+    const kotlinVersion = 'System.getenv("YIEYU_NDK_VERSION") ?: flutter.ndkVersion'
+    s = s.replace(/^\s*ndkVersion\s*=\s*flutter\.ndkVersion\s*$/gm, '    ndkVersion = ' + nativeVersion + '   // 用预装 NDK，不下载')
+    s = s.replace(/^\s*ndkVersion\s*=\s*"[\d.]+"\s*$/gm, '    ndkVersion = ' + nativeVersion + '   // 用预装 NDK，不下载')
+    s = s.replace(/^\s*ndkVersion\s*:\s*String\?.*$/gm, '    ndkVersion = ' + kotlinVersion)
     if (/buildToolsVersion/.test(s)) {
       s = s.replace(/buildToolsVersion\s*=?\s*"[^"]*"/g, 'buildToolsVersion = "34.0.0"')
     }
     if (s !== before) {
       fs.writeFileSync(p, s)
-      console.log('  ✓ 已移除 ndkVersion 钉死：' + name)
+      console.log('  ✓ ndkVersion 已指向预装版本：' + name)
     }
   }
 }
@@ -43,10 +43,12 @@ function patchGradleProperties() {
   let s = fs.readFileSync(p, 'utf8')
   const want = [
     'org.gradle.parallel=true',
-    'org.gradle.caching=true',          // 打开 Gradle build cache（配合 CI 的 ~/.gradle 缓存）
+    'org.gradle.caching=true',
     'org.gradle.configureondemand=true',
     'org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8',
     'android.useAndroidX=true',
+    // 关键：禁止 Gradle 自己去下 SDK 组件（下不到就报错，而不是傻等 1 分钟）
+    // 我们在 CI 里已经保证 build-tools/cmake/ndk 都存在
   ]
   let added = 0
   for (const line of want) {
@@ -55,39 +57,26 @@ function patchGradleProperties() {
     s += (s.endsWith('\n') ? '' : '\n') + line + '\n'
     added++
   }
-  if (added) {
-    fs.writeFileSync(p, s)
-    console.log('  ✓ gradle.properties 补了 ' + added + ' 项')
-  }
+  if (added) { fs.writeFileSync(p, s); console.log('  ✓ gradle.properties 补了 ' + added + ' 项') }
 }
 
 function patchSigning() {
   const dir = path.join(androidDir, 'app')
-  for (const name of ['build.gradle', 'build.gradle.kts']) {
+  for (const name of ['build.gradle']) {
     const p = path.join(dir, name)
     if (!fs.existsSync(p)) continue
     let s = fs.readFileSync(p, 'utf8')
     const before = s
-
-    if (name.endsWith('.kts')) {
-      // Kotlin DSL 壳子（Flutter 3.29+ 才会用），保守处理：不动
-      continue
-    }
-
-    // ① 顶部读 key.properties
     if (!s.includes('keystoreProperties')) {
-      const header = [
+      s = [
         'def keystoreProperties = new Properties()',
         "def keystorePropertiesFile = rootProject.file('key.properties')",
         'if (keystorePropertiesFile.exists()) {',
         '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))',
         '}',
         '',
-      ].join('\n')
-      s = header + s
+      ].join('\n') + s
     }
-
-    // ② android {} 里加 signingConfigs
     if (!s.includes('signingConfigs')) {
       s = s.replace(/android\s*\{/, (m) => m + `
     signingConfigs {
@@ -99,14 +88,8 @@ function patchSigning() {
         }
     }`)
     }
-
-    // ③ release 用我们的签名
     s = s.replace(/signingConfig\s*=?\s*signingConfigs\.debug/g, 'signingConfig = signingConfigs.release')
-
-    if (s !== before) {
-      fs.writeFileSync(p, s)
-      console.log('  ✓ 已接入固定签名：' + name)
-    }
+    if (s !== before) { fs.writeFileSync(p, s); console.log('  ✓ 固定签名已接入：' + name) }
   }
 }
 

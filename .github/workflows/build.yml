@@ -77,6 +77,7 @@ jobs:
           restore-keys: out-v2-
 
       - name: 2. ccache
+        id: ccache
         uses: actions/cache@v4
         with:
           path: /home/runner/.ccache
@@ -84,6 +85,7 @@ jobs:
           restore-keys: ccache-v2-
 
       - name: 3. sccache
+        id: sc
         uses: actions/cache@v4
         with:
           path: /home/runner/.cache/sccache
@@ -91,6 +93,7 @@ jobs:
           restore-keys: sccache-v2-
 
       - name: 4. Go 构建缓存
+        id: gocache
         uses: actions/cache@v4
         with:
           path: |
@@ -100,6 +103,7 @@ jobs:
           restore-keys: go-v2-
 
       - name: 5. Gradle + pub（含 build-cache，APK 步骤提速的关键）
+        id: gcache
         uses: actions/cache@v4
         with:
           path: |
@@ -107,24 +111,26 @@ jobs:
             ~/.gradle/wrapper
             ~/.gradle/daemon
             ~/.pub-cache
-          key: gradle-v3-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs','android/**') }}
+          # ★ 固定 key：内容变了也复用同一份缓存，增量交给 Gradle 自己判断。
+          #   之前 key 里带 hashFiles(pubspec)，加一个依赖就整份缓存作废 → 每次都重下。
+          key: gradle-v4-${{ runner.os }}
           restore-keys: |
+            gradle-v4-
             gradle-v3-
-            gradle-v2-
 
-      - name: 5.5 Android SDK 额外组件（NDK/cmake/build-tools）
-        # 不要缓存整个 /usr/local/lib/android/sdk（10GB+，恢复比下载慢）。
-        # 只缓存 Gradle 会自己装的那几个目录；配合 patch_gradle.mjs 删掉 ndkVersion 后，
-        # 正常情况这里应该 0 命中、也不需要下载。
+      - name: 5.5 Android SDK 额外组件（build-tools / cmake）
+        # 三条原则：
+        #   ① 不缓存 NDK（~1GB，改用 runner 预装版本，见 patch_gradle.mjs）
+        #   ② 不缓存整个 sdk 目录（10GB+，解压比下载还慢）
+        #   ③ key 写死，不带 hashFiles —— 内容变了也复用，增量交给组件自己判断
         uses: actions/cache@v4
         with:
           path: |
-            /usr/local/lib/android/sdk/ndk
-            /usr/local/lib/android/sdk/cmake
             /usr/local/lib/android/sdk/build-tools
+            /usr/local/lib/android/sdk/cmake
             /usr/local/lib/android/sdk/licenses
-          key: sdkextra-v1-${{ runner.os }}-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs') }}
-          restore-keys: sdkextra-v1-
+          key: sdkextra-v2-${{ runner.os }}
+          restore-keys: sdkextra-v2-
 
       - name: 6. 强制全量时清空 out/
         if: inputs.force
@@ -155,6 +161,9 @@ jobs:
         run: |
           echo "ANDROID_NDK=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
           echo "ANDROID_API=26" >> $GITHUB_ENV
+          # 让 Gradle 直接用这份预装 NDK，不去网上下 1GB
+          echo "YIEYU_NDK_VERSION=$(basename "$ANDROID_NDK_LATEST_HOME")" >> $GITHUB_ENV
+          echo "NDK 版本: $(basename "$ANDROID_NDK_LATEST_HOME")"
           echo "NDK=$ANDROID_NDK_LATEST_HOME"
 
       - name: 12. ccache / flatc / gomobile
@@ -220,7 +229,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: 20. 缓存命中情况
+      - name: 20. 缓存自检（每个 cache 步单独报）
+        if: always()
+        run: |
+          echo "out/      : ${{ steps.ocache.outputs.cache-hit }}"
+          echo "gradle    : ${{ steps.gcache.outputs.cache-hit }}"
+          echo "sdk-extra : ${{ steps.scache.outputs.cache-hit }}"
+          echo "ccache    : ${{ steps.ccache.outputs.cache-hit }}"
+          echo "sccache   : ${{ steps.sc.outputs.cache-hit }}"
+          echo "go        : ${{ steps.gocache.outputs.cache-hit }}"
+
+      - name: 20.5 缓存命中情况
         if: always()
         run: |
           echo "out/ 缓存命中: ${{ steps.ocache.outputs.cache-hit }}"
@@ -269,18 +288,17 @@ jobs:
             ~/.gradle/wrapper
             ~/.gradle/daemon
             ~/.pub-cache
-          key: gradle-v3-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs','android/**') }}-${{ github.run_id }}
+          key: gradle-v4-${{ runner.os }}-${{ github.run_id }}
 
-      - name: 27. 保存 SDK 额外组件（失败也存）
+      - name: 27. 保存 SDK 额外组件（失败也存，固定 key）
         if: always()
         uses: actions/cache/save@v4
         with:
           path: |
-            /usr/local/lib/android/sdk/ndk
-            /usr/local/lib/android/sdk/cmake
             /usr/local/lib/android/sdk/build-tools
+            /usr/local/lib/android/sdk/cmake
             /usr/local/lib/android/sdk/licenses
-          key: sdkextra-v1-${{ runner.os }}-${{ hashFiles('app/pubspec.yaml','app/patch_gradle.mjs') }}-${{ github.run_id }}
+          key: sdkextra-v2-${{ runner.os }}-${{ github.run_id }}
 
       - name: 21. 失败时留日志
         if: failure()
