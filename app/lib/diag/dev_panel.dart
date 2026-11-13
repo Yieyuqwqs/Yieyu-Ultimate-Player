@@ -95,8 +95,8 @@ class _DevPanelState extends State<DevPanel> {
       if (t < fade) env = t / fade;
       if (t > secs - fade) env = (secs - t) / fade;
       final v = (0.28 * env * math.sin(2 * math.pi * freq * t) * 32767).round().clamp(-32767, 32767).toInt();
-      bd.setInt16(i * 4, v, true);
-      bd.setInt16(i * 4 + 2, v, true);
+      bd.setInt16(i * 4, v, Endian.little);
+      bd.setInt16(i * 4 + 2, v, Endian.little);
     }
     final h = BytesBuilder();
     void u32(int v) => h.add(<int>[v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff]);
