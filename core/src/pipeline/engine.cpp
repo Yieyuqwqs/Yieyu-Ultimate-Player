@@ -396,12 +396,13 @@ void Engine::Stats(char* out, size_t cap) {
   Player& p = Player::Instance();
   std::snprintf(out, cap,
                 "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld "
-                "lic=%d integ=%d kv=%d store=%d",
+                "lic=%d integ=%d kv=%d store=%d gyro=%d dsd=%d resamp=%d target=%d",
                 (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
                 (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns(),
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
                 (long long)p.DecodedChunks(), (int)lic_.load(), (int)integ_.load(),
-                kv_count(), (int)storeEntries_.load());
+                kv_count(), (int)storeEntries_.load(), gyro_is_available(),
+                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate());
 }
 
 }  // namespace yieyu

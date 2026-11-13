@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../animation/rive_stage.dart';
+import '../animation/vector_stage.dart';
 import '../gestures/gesture_bridge.dart';
 import '../jsb/jsb_client.dart';
 import '../jsb/jsb_ops.dart';
@@ -155,7 +155,12 @@ class _HomePageState extends State<HomePage> {
             // （以前 eqDb 一个字节都没填 → 这条线永远是平的；现在 engine 真的把 31 点填进来了）
             SizedBox(
               height: 120,
-              child: RiveStage(eqDb: _snap.eqDb, playing: _snap.playing),
+              child: VectorStage(
+                eqDb: _snap.eqDb,
+                playing: _snap.playing,
+                peakL: _snap.peakL,
+                peakR: _snap.peakR,
+              ),
             ),
             Expanded(
               child: _songs.isEmpty

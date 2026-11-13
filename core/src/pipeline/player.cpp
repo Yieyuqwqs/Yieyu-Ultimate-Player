@@ -15,6 +15,8 @@
 #include "../common/log.h"
 #include "../common/blackbox.h"
 #include "../net/song_uri.h"   // yieyu://song?... → 真直链
+#include "../net/stream_http.h" // [9] 自研 socket HTTP/1.1
+#include "../common/app_paths.h"
 
 namespace yieyu {
 namespace {
@@ -223,11 +225,26 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     return;
   }
 
+  // [9] 明文 http:// 走自研 socket 层：先落到私有缓存，再交给解码器。
+  //    https 不走这里（NDK 没有 TLS，系统解码器/Go 自带）。
+  char cachePath[900];
+  const char* playPath = target;
+  if (strncmp(target, "http://", 7) == 0) {
+    std::snprintf(cachePath, sizeof(cachePath), "%s/m9.cache", yp_data());
+    int64_t bytes = 0;
+    if (yieyu_http_download(target, cachePath, 0, &bytes) == 0) {
+      playPath = cachePath;
+    } else {
+      // 取流失败不拦路：让系统解码器自己去试（它也能吃 http）
+      LOGE("[9] 自研取流失败（%s），改让系统解码器直连：%.120s", yieyu_http_error(), target);
+    }
+  }
+
   int32_t rate = 48000, ch = 2;
   int64_t durUs = 0;
   int32_t srcRate = 48000;
   const int wantRate = targetRate_.load(std::memory_order_relaxed);
-  const int isDsf = dsd_probe(target);
+  const int isDsf = dsd_probe(playPath);
   dsd_.store(isDsf == 1, std::memory_order_relaxed);
   resamp_.store(false, std::memory_order_relaxed);
   int rc = 0;
@@ -235,11 +252,11 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     // [16] DSD：固定解到 192k（除非用户显式指定），中间率由模块自己算
     const int dsdOut = wantRate > 0 ? wantRate : 192000;
     int outCh = 2;
-    rc = dsd_open(target, dsdOut, &rate, &outCh, &durUs);
+    rc = dsd_open(playPath, dsdOut, &rate, &outCh, &durUs);
     srcRate = rate;
     if (rc == 0) ch = outCh;
   } else {
-    rc = yieyu_pdec_open(target, &rate, &ch, &durUs);
+    rc = yieyu_pdec_open(playPath, &rate, &ch, &durUs);
     srcRate = rate;
     if (rc == 0 && wantRate > 0 && wantRate != (int)rate) {
       // [14] 升/降频：目标率固定，DSP 与声卡都按目标率跑
@@ -251,7 +268,7 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   }
   if (rc != 0) {
     const char* why = (isDsf == 1) ? dsd_error() : yieyu_pdec_error();
-    LOGE("[13/16] 打开音频失败 rc=%d uri=%.180s（%s）", rc, target, why ? why : "?");
+    LOGE("[13/16] 打开音频失败 rc=%d uri=%.180s（%s）", rc, playPath, why ? why : "?");
     {
       std::lock_guard<std::mutex> lk(errMu_);
       std::snprintf(err_, sizeof(err_), "%s 打不开音频 rc=%d：%s", (isDsf == 1) ? "[16]" : "[13]", rc,

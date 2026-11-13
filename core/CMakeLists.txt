@@ -103,7 +103,7 @@ set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
                 src/dsp/tube_vinyl.cpp                 # [17]
                 src/dsp/hrtf_8d.cpp)                   # [17] + [23]
 set(SRC_SENSOR  src/sensor/gyro_asensor.cpp)           # [23]
-set(SRC_NET     src/net/stream_curl.c                 # [9]
+set(SRC_NET     src/net/stream_http.c                 # [9] 自研 socket HTTP/1.1
                 src/net/song_uri.cpp)                  # [5]/[9] yieyu://song → 真直链
 set(SRC_STORE   src/store/kv_store.cpp)                # [20] 自研追加日志（唯一写者）
 set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]

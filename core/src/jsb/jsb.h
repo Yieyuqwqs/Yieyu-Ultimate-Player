@@ -78,6 +78,9 @@ YIEYU_API void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive);
 //    打开后整条链路（解码 → [14] → [17] → [15]）都按目标率跑，声卡也按目标率开流。
 YIEYU_API void Yieyu_SetRate(int hz);
 
+// ⑭ [9] 自研取流自检：对 http:// 发一次请求，返回 HTTP 状态码，信息写进 out（诊断面板显示）。
+YIEYU_API int Yieyu_HttpProbe(const char* url, char* out, int cap);
+
 // ⑨ [5] 搜歌（真实网络，走 Go 编的 libyieyu_fetch.so）。
 //    0=已受理（异步，网络在独立线程）；结果从 Yieyu_Poll 取：
 //      事件帧 = [0] 类型 'S'=结果JSON数组 / 'E'=错误文案

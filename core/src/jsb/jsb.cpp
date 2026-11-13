@@ -9,6 +9,7 @@
 #include "../common/blackbox.h"
 #include "../common/app_paths.h"
 #include "../script/lua_sandbox.h"
+#include "../net/stream_http.h"
 #include <cstdlib>
 #include <sys/stat.h>
 #include <atomic>
@@ -119,6 +120,11 @@ void Yieyu_SetDsp(int on) { if (g_inited.load()) yieyu::Engine::Instance().SetDs
 void Yieyu_SetEqGain(int band, float db) {
   if (g_inited.load()) yieyu::Engine::Instance().SetEqGain(band, db);
 }
+int Yieyu_HttpProbe(const char* url, char* out, int cap) {
+  if (!url || !*url) return -1;
+  return yieyu_http_probe(url, out, cap);
+}
+
 void Yieyu_SetRate(int hz) { if (g_inited.load()) yieyu::Engine::Instance().SetRate(hz); }
 void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive) {
   if (g_inited.load()) yieyu::Engine::Instance().SetTone(tube != 0, vinyl != 0, lpf != 0, drive);

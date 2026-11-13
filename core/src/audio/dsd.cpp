@@ -25,6 +25,12 @@
 
 #include "../common/log.h"
 
+// 重采样器（[14]）在 yieyu 命名空间里；本文件对外是 C 接口，这里拉进来用
+using yieyu::resample_init;
+using yieyu::resample_outFramesHint;
+using yieyu::resample_process;
+using yieyu::resample_reset;
+
 namespace {
 
 constexpr int kTaps = 64;      // 抽取 FIR 抽头

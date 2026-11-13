@@ -170,6 +170,8 @@ class JsbClient {
       _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetRate');
   late final _DirDart _logDir =
       _lib.lookupFunction<_DirNative, _DirDart>('Yieyu_LogDir');
+  late final _HttpProbeDart _httpProbeFn =
+      _lib.lookupFunction<_HttpProbeNative, _HttpProbeDart>('Yieyu_HttpProbe');
   late final _CallDart _scriptCallFn =
       _lib.lookupFunction<_CallNative, _CallDart>('Yieyu_ScriptCall');
   late final _ConstCharDart _lastError =
@@ -320,6 +322,43 @@ class JsbClient {
   /// [14] 输出采样率（0=自动）。下一次起播生效（正在放的曲子不中途换流）。
   void setRate(int hz) {
     _setRate(hz);
+  }
+
+  /// 各模块健康度一行（只在开发/自检页显示，正常界面不展示）
+  String statsText() {
+    final buf = malloc.allocate<Utf8>(600);
+    try {
+      _stats(buf, 600);
+      return buf.toDartString();
+    } catch (_) {
+      return '';
+    } finally {
+      malloc.free(buf);
+    }
+  }
+
+  /// [9] 自研取流自检：返回 HTTP 状态码（<0 = 网络/参数错误）
+  int httpProbe(String url) {
+    final u = url.toNativeUtf8();
+    final out = malloc.allocate<Utf8>(200);
+    try {
+      return _httpProbeFn(u, out, 200);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(u);
+      malloc.free(out);
+    }
+  }
+
+  /// 最近一次底层失败原因（只给诊断页/自检页看）
+  String get lastError {
+    try {
+      final p = _lastError();
+      return p == nullptr ? '' : p.toDartString();
+    } catch (_) {
+      return '';
+    }
   }
 
   int kvCount() => _kvCount();

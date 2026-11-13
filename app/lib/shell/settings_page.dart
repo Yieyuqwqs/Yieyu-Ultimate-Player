@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../diag/boot_log.dart';
 import '../diag/dev_panel.dart';
+import '../diag/modules_page.dart';
 import '../jsb/jsb_client.dart';
 
 /// 【模块 1】设置页：导入 Lua 脚本 / 导出诊断日志。
@@ -22,6 +23,9 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _busy = false;
   int _titleTaps = 0;
+  // 输出采样率（模块 14）：0=自动（PCM 跟源、DSD→192k）
+  int _rate = 0;
+  bool _dsp = false;
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -173,11 +177,59 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 24),
           Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.graphic_eq),
+                  title: const Text('输出采样率'),
+                  subtitle: Text(_rate == 0 ? '自动（跟随音源）' : '${_rate ~/ 1000} kHz（模块 14 升频）'),
+                  trailing: DropdownButton<int>(
+                    value: _rate,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('自动')),
+                      DropdownMenuItem(value: 48000, child: Text('48k')),
+                      DropdownMenuItem(value: 96000, child: Text('96k')),
+                      DropdownMenuItem(value: 192000, child: Text('192k')),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _rate = v);
+                      JsbClient.instance.setRate(v);   // [14]
+                      _toast(v == 0 ? '下次起播：跟随音源' : '下次起播：升频到 ${v ~/ 1000} kHz');
+                    },
+                  ),
+                ),
+                SwitchListTile(
+                  leading: const Icon(Icons.equalizer),
+                  title: const Text('音效链'),
+                  subtitle: const Text('31 段 EQ + 胆机/黑胶 + 8D 空间化'),
+                  value: _dsp,
+                  onChanged: (v) {
+                    setState(() => _dsp = v);
+                    JsbClient.instance.setDsp(v);    // [17]
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
             child: ListTile(
               leading: const Icon(Icons.description_outlined),
               title: const Text('导出诊断日志'),
               subtitle: const Text('遇到问题时导出，便于排查'),
               onTap: _busy ? null : _export,
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.grid_view_rounded),
+              title: const Text('模块自检'),
+              subtitle: const Text('24 个模块当前是不是真的在跑'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ModulesPage()),
+              ),
             ),
           ),
         ],
