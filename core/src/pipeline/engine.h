@@ -60,6 +60,8 @@ class Engine {
 
   enum class State { kIdle, kLicensing, kUnlicensed, kReady, kPlaying, kFault };
   std::atomic<State> state_{State::kIdle};
+  // [10] 验签库状态：-1=没有库/还没跑，0=库在但内嵌公钥缺失，1=可用
+  std::atomic<int> lic_{-1};
 
   std::unique_ptr<ByteRing> byteRing_;
 

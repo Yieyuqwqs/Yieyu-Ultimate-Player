@@ -47,9 +47,15 @@ const STEPS = [
     cwd: 'zig', out: ['zig'], inputs: ['zig'] },
 
   { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so', cwd: 'rust',
-    cmd: () => ['cargo', 'build', '--release',
-      '--target', 'aarch64-linux-android'],
-    env: () => androidEnv(), out: ['rust'], inputs: ['rust'] },
+    // ★ 以前这里只跑 cargo，产物留在 rust/target/ 下没人搬 —— 而 CMake 和打包脚本
+    //   只认 out/rust/aarch64-linux-android/release/。结果：三个 Rust 模块永远
+    //   "缺库 → 走空实现"，从来没进过 APK。编译完必须落位。
+    cmd: () => ['bash', '-c',
+      'cargo build --release --target aarch64-linux-android || exit 1; ' +
+      'dst="$YIEYU_OUT/rust/aarch64-linux-android/release"; mkdir -p "$dst"; ' +
+      'for n in yieyu_gesture yieyu_license yieyu_store; do ' +
+      'cp -fv "target/aarch64-linux-android/release/lib$n.so" "$dst/" || exit 1; done'],
+    env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['rust'], inputs: ['rust'] },
 
   { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
     cmd: () => ['bash', 'build-aar.sh'],

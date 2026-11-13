@@ -24,6 +24,13 @@ void  yieyu_fetch_free(char* p);
 }
 #endif
 
+// [10] 验签：Rust + ring 编的 libyieyu_license.so（以前只编、不进包，也从来没被调用）
+#ifdef YIEYU_HAVE_LICENSE
+extern "C" {
+int yieyu_license_has_pubkey(void);
+}
+#endif
+
 namespace yieyu {
 
 Engine& Engine::Instance() {
@@ -59,9 +66,23 @@ int Engine::Boot(const char* filesDir, const char* abi) {
     searchKw_.clear();
   }
 
-  // ① [10] 验签：唯一密钥在这里，Kotlin/Dart/Lua 一律不持有
-  //    （骨架期返回 OK；接了 license-ring 后换成真调用）
-  const bool licensed = true;
+  // ① [10] 验签：唯一密钥在这里，Kotlin/Dart/Lua 一律不持有。
+  //    以前是 `const bool licensed = true;` —— 也就是说这整个模块是摆设。
+  //    现在真的去问 Rust/ring 编的库：没有库、或库里没有内嵌公钥，都在 Stats 与
+  //    黑匣子里留痕（本地自用阶段不熔断，但绝不再假装"验过了"）。
+  bool licensed = true;
+#ifdef YIEYU_HAVE_LICENSE
+  {
+    const int hasKey = yieyu_license_has_pubkey();
+    lic_.store(hasKey == 1 ? 1 : 0);
+    if (hasKey != 1) {
+      bb_write(YIEYU_LOG_ERROR, "[10] 验签库已加载，但内嵌公钥缺失（has_pubkey=%d）", hasKey);
+    }
+  }
+#else
+  lic_.store(-1);
+  bb_write(YIEYU_LOG_ERROR, "[10] 没有 libyieyu_license.so，验签走空实现");
+#endif
   if (!licensed) {
     state_.store(State::kUnlicensed);
     bb_write(YIEYU_LOG_ERROR, "[10] 验签失败 → 熔断（停解码/清环/置灰），trace=%s", bb_trace());
@@ -270,11 +291,11 @@ void Engine::OnSystemAction(int actionId) {
 void Engine::Stats(char* out, size_t cap) {
   Player& p = Player::Instance();
   std::snprintf(out, cap,
-                "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld",
+                "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld lic=%d",
                 (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
                 (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns(),
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
-                (long long)p.DecodedChunks());
+                (long long)p.DecodedChunks(), (int)lic_.load());
 }
 
 }  // namespace yieyu

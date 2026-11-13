@@ -132,10 +132,17 @@ class _HomePageState extends State<HomePage> {
               child: TextField(
                 controller: _searchCtrl,
                 textInputAction: TextInputAction.search,
-                decoration: const InputDecoration(
-                  hintText: '搜歌（Go 协程 + 真实音源接口）',
+                decoration: InputDecoration(
+                  hintText: '输入歌名搜索',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  // ★ 必须有这个按钮：中文输入法的"回车"不一定触发 onSubmitted，
+                  //   以前只有 onSubmitted，用户会以为"搜索栏是坏的"。
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.search),
+                    tooltip: '搜索',
+                    onPressed: () => _doSearch(_searchCtrl.text),
+                  ),
                 ),
                 onSubmitted: _doSearch,
               ),
