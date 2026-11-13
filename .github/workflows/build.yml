@@ -42,17 +42,15 @@ jobs:
           fetch-depth: 0
 
       - name: 0.3 固定签名（首次生成并提交，之后所有构建同一签名）
-        if: ${{ hashFiles('app/signing/yieyu.jks.b64') == '' }}
+        if: ${{ hashFiles('app/signing/yieyu.jks') == '' }}
         run: |
-          keytool -genkeypair -v -keystore /tmp/yieyu.jks -alias yieyu \
+          keytool -genkeypair -v -keystore app/signing/yieyu.jks -alias yieyu \
             -keyalg RSA -keysize 2048 -validity 36500 \
             -storepass yieyu2026 -keypass yieyu2026 \
             -dname "CN=Yieyu Ultimate, OU=Self, O=Yieyu, L=CN, ST=CN, C=CN"
-          mkdir -p app/signing
-          base64 -w0 /tmp/yieyu.jks > app/signing/yieyu.jks.b64
           git config user.email "actions@users.noreply.github.com"
           git config user.name "yieyu-ci"
-          git add app/signing/yieyu.jks.b64
+          git add app/signing/yieyu.jks
           git commit -m "chore(signing): 生成固定签名密钥 [skip ci]"
           git push
           echo "✓ 固定签名已生成并提交，后续构建复用同一签名"
@@ -132,20 +130,6 @@ jobs:
           restore-keys: |
             gradle-v4-
             gradle-v3-
-
-      - name: 5.5 Android SDK 额外组件（build-tools / cmake）
-        # 三条原则：
-        #   ① 不缓存 NDK（~1GB，改用 runner 预装版本，见 patch_gradle.mjs）
-        #   ② 不缓存整个 sdk 目录（10GB+，解压比下载还慢）
-        #   ③ key 写死，不带 hashFiles —— 内容变了也复用，增量交给组件自己判断
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/lib/android/sdk/build-tools
-            /usr/local/lib/android/sdk/cmake
-            /usr/local/lib/android/sdk/licenses
-          key: sdkextra-v2-${{ runner.os }}
-          restore-keys: sdkextra-v2-
 
       - name: 6. 强制全量时清空 out/
         if: inputs.force
@@ -249,7 +233,6 @@ jobs:
         run: |
           echo "out/      : ${{ steps.ocache.outputs.cache-hit }}"
           echo "gradle    : ${{ steps.gcache.outputs.cache-hit }}"
-          echo "sdk-extra : ${{ steps.scache.outputs.cache-hit }}"
           echo "ccache    : ${{ steps.ccache.outputs.cache-hit }}"
           echo "sccache   : ${{ steps.sc.outputs.cache-hit }}"
           echo "go        : ${{ steps.gocache.outputs.cache-hit }}"
@@ -304,16 +287,6 @@ jobs:
             ~/.gradle/daemon
             ~/.pub-cache
           key: gradle-v4-${{ runner.os }}-${{ github.run_id }}
-
-      - name: 27. 保存 SDK 额外组件（失败也存，固定 key）
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            /usr/local/lib/android/sdk/build-tools
-            /usr/local/lib/android/sdk/cmake
-            /usr/local/lib/android/sdk/licenses
-          key: sdkextra-v2-${{ runner.os }}-${{ github.run_id }}
 
       - name: 21. 失败时留日志
         if: failure()
