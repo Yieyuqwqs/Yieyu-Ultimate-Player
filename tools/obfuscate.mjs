@@ -27,7 +27,7 @@ const MUST_EXPORT = [
   'Yieyu_PlayUrl', 'Yieyu_Pause', 'Yieyu_Resume', 'Yieyu_Stop', 'Yieyu_SeekMs', 'Yieyu_SetVolume',
   'Yieyu_Search', 'Yieyu_PlaySong', 'Yieyu_ScriptCall', 'Yieyu_ImportScript',
   'Yieyu_IntegrityCheck', 'Yieyu_SelfDigest', 'Yieyu_KvCount', 'Yieyu_StoreCount',
-  'Yieyu_SetRate', 'Yieyu_HttpProbe', 'Yieyu_MakeKaraoke', 'Yieyu_KaraokeStatus',
+  'Yieyu_SetRate', 'Yieyu_HttpProbe', 'Yieyu_MakeKaraoke', 'Yieyu_KaraokeStatus', 'Yieyu_ImportPlugin', 'Yieyu_SetPlugin',
 ]
 
 function tcBin(name) {

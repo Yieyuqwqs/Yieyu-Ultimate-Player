@@ -17,6 +17,7 @@
 #include "../audio/aaudio_sink.h"
 #include "../script/lua_sandbox.h"
 #include "../ai/vocals.h"
+#include "../wasm/wasm_host.h"
 #include "player.h"
 
 // [5]/[9] 搜歌出口：Go 编的 libyieyu_fetch.so（与 Lua 的 http_* 是同一份）
@@ -155,6 +156,19 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   storeEntries_.store(-1);
 #endif
 
+  // ③.5 [8] wasm 插件：<home>/plugins/*.wasm（没有插件是正常情况，不算错）
+  {
+    char pdir[900];
+    std::snprintf(pdir, sizeof(pdir), "%s/plugins", yp_home());
+    (void)yp_ensure(pdir);
+    if (wasm_host_init(pdir) != 0) {
+      // 没有插件是常态：只在真有文件却载入失败时才记黑盒
+      if (wasm_plugin_count() > 0) {
+        bb_write(YIEYU_LOG_ERROR, "[8] 插件载入失败：%s（目录 %s）", wasm_host_error(), pdir);
+      }
+    }
+  }
+
   // ④ [23] 陀螺仪（8D 用；没有传感器就静默降级，不外抛）
   gyro_start(200 /* Hz */);
 
@@ -211,6 +225,7 @@ void Engine::Shutdown() {
 #endif
   kv_close();
   lua_sandbox_shutdown();
+  wasm_host_shutdown();
   bb_flush();
   bb_shutdown();
   state_.store(State::kIdle);
@@ -426,13 +441,13 @@ void Engine::Stats(char* out, size_t cap) {
   Player& p = Player::Instance();
   std::snprintf(out, cap,
                 "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld "
-                "lic=%d integ=%d kv=%d store=%d gyro=%d dsd=%d resamp=%d target=%d",
+                "lic=%d integ=%d kv=%d store=%d gyro=%d dsd=%d resamp=%d target=%d plug=%d",
                 (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
                 (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns(),
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
                 (long long)p.DecodedChunks(), (int)lic_.load(), (int)integ_.load(),
                 kv_count(), (int)storeEntries_.load(), gyro_is_available(),
-                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate());
+                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate(), wasm_plugin_ready());
 }
 
 }  // namespace yieyu

@@ -99,6 +99,7 @@ class Player {
   std::atomic<int>     targetRate_{0};  // [14] 0=自动
   std::atomic<bool>    dsd_{false};     // [16] 本曲是否 DSD
   std::atomic<bool>    resamp_{false};  // [14] 本曲是否真在重采样
+  std::atomic<bool>    pluginOn_{false}; // [8] 插件处理开关（默认关）
   std::atomic<int32_t> wfail_{0};       // 生产者写不进环的次数（>0 就是链路故障）
   std::atomic<int64_t> chunks_{0};      // 解码线程成功产出的块数（活性指标）
   mutable std::mutex   errMu_;

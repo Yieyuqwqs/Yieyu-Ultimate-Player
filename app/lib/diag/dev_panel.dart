@@ -168,17 +168,17 @@ class _DevPanelState extends State<DevPanel> {
     setState(() => _hint = '正在打开文件选择器…');
     try {
       final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
-      if (picked == null || picked.files.isEmpty) { setState(() => _hint = '已取消'); return }
+      if (picked == null || picked.files.isEmpty) { setState(() => _hint = '已取消'); return; }
       final f = picked.files.single;
       var bytes = f.bytes;
       if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
-      if (bytes == null) { setState(() => _hint = '读不到文件内容'); return }
+      if (bytes == null) { setState(() => _hint = '读不到文件内容'); return; }
       final dir = await getTemporaryDirectory();
       final src = File('${dir.path}/karaoke_src.wav');
       await src.writeAsBytes(bytes, flush: true);
       final dst = '${dir.path}/karaoke_out.wav';
       final rc = JsbClient.instance.makeKaraoke(src.path, dst);
-      if (rc != 0) { setState(() => _hint = '没能受理（$rc）'); return }
+      if (rc != 0) { setState(() => _hint = '没能受理（$rc）'); return; }
       setState(() => _hint = '正在生成伴奏（离屏跑，几十秒）…');
       for (var i = 0; i < 240; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 500));

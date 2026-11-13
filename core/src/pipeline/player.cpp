@@ -12,6 +12,7 @@
 #include "../dsp/dsp.h"
 #include "../sensor/gyro_asensor.h"   // [23] 姿态 → [17] 8D
 #include "../store/kv_store.h"        // [20] 播放进度落盘
+#include "../wasm/wasm_host.h"         // [8] wasm 音效插件
 #include "../common/log.h"
 #include "../common/blackbox.h"
 #include "../net/song_uri.h"   // yieyu://song?... → 真直链
@@ -101,6 +102,8 @@ void Player::SetTargetRate(int hz) {
   if (hz != 0 && hz != 44100 && hz != 48000 && hz != 88200 && hz != 96000 && hz != 176400 && hz != 192000) return;
   targetRate_.store(hz, std::memory_order_relaxed);
 }
+
+void Player::SetPlugin(bool on) { pluginOn_.store(on, std::memory_order_relaxed); }
 
 void Player::SetDsp(bool on) { dspOn_.store(on, std::memory_order_relaxed); }
 
@@ -352,6 +355,13 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     }
     if (n > 0) {
       // [17] 音效链：只在解码线程跑（音频线程零处理，守铁律 2）
+      // [8] wasm 插件：只在解码线程跑，开关默认关；插件出错只丢这一块，不影响出声
+      if (pluginOn_.load(std::memory_order_relaxed) && wasm_plugin_ready()) {
+        if (wasm_plugin_process(g_scratch, n) != 0) {
+          pluginOn_.store(false, std::memory_order_relaxed);
+          bb_write(YIEYU_LOG_ERROR, "[8] 插件处理失败，已自动关掉插件开关：%s", wasm_host_error());
+        }
+      }
       if (dspOn_.load(std::memory_order_relaxed)) {
         eq31_process(g_scratch, n);
         tube_vinyl_process(g_scratch, n);

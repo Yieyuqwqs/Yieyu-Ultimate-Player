@@ -118,6 +118,8 @@ typedef _MakeKaraokeNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _MakeKaraokeDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _KaraokeStatusNative = Int32 Function(Pointer<Utf8>, Int32);
 typedef _KaraokeStatusDart = int Function(Pointer<Utf8>, int);
+typedef _ImportPluginNative = Int32 Function(Pointer<Utf8>, Pointer<Uint8>, Int32);
+typedef _ImportPluginDart = int Function(Pointer<Utf8>, Pointer<Uint8>, int);
 typedef _HttpProbeNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int32);
 typedef _HttpProbeDart = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
 typedef _StrIntNative = Int32 Function(Pointer<Utf8>);
@@ -173,10 +175,14 @@ class JsbClient {
   late final _ToneVoidDart _setTone =
       _lib.lookupFunction<_ToneVoidNative, _ToneVoidDart>('Yieyu_SetTone');
   // [14] 输出采样率：0=自动 / 48000 / 96000 / 192000
+  late final _IntVoidDart _setPlugin =
+      _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetPlugin');
   late final _IntVoidDart _setRate =
       _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetRate');
   late final _DirDart _logDir =
       _lib.lookupFunction<_DirNative, _DirDart>('Yieyu_LogDir');
+  late final _ImportPluginDart _importPluginFn =
+      _lib.lookupFunction<_ImportPluginNative, _ImportPluginDart>('Yieyu_ImportPlugin');
   late final _MakeKaraokeDart _makeKaraokeFn =
       _lib.lookupFunction<_MakeKaraokeNative, _MakeKaraokeDart>('Yieyu_MakeKaraoke');
   late final _KaraokeStatusDart _karaokeStatusFn =
@@ -334,6 +340,26 @@ class JsbClient {
   /// [14] 输出采样率（0=自动）。下一次起播生效（正在放的曲子不中途换流）。
   void setRate(int hz) {
     _setRate(hz);
+  }
+
+  /// [8] 导入 wasm 音效插件（写进 <home>/plugins 并重新扫描）。0=成功。
+  int importPlugin(String name, Uint8List bytes) {
+    final n = name.toNativeUtf8();
+    final buf = malloc.allocate<Uint8>(bytes.length);
+    try {
+      buf.asTypedList(bytes.length).setAll(0, bytes);
+      return _importPluginFn(n, buf, bytes.length);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(n);
+      malloc.free(buf);
+    }
+  }
+
+  /// [8] 插件处理开关（下一块解码生效）
+  void setPlugin(bool on) {
+    _setPlugin(on ? 1 : 0);
   }
 
   /// [18] 生成伴奏（离线人声消除）。返回 0=已受理；-2=已经在跑。

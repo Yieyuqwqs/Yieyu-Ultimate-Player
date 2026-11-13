@@ -10,6 +10,7 @@
 #include "../common/app_paths.h"
 #include "../script/lua_sandbox.h"
 #include "../net/stream_http.h"
+#include "../wasm/wasm_host.h"
 #include <cstdlib>
 #include <sys/stat.h>
 #include <atomic>
@@ -120,6 +121,28 @@ void Yieyu_SetDsp(int on) { if (g_inited.load()) yieyu::Engine::Instance().SetDs
 void Yieyu_SetEqGain(int band, float db) {
   if (g_inited.load()) yieyu::Engine::Instance().SetEqGain(band, db);
 }
+void Yieyu_SetPlugin(int on) { if (g_inited.load()) yieyu::Engine::Instance().SetPlugin(on != 0); }
+
+int Yieyu_ImportPlugin(const char* name, const uint8_t* data, int len) {
+  if (!name || !data || len <= 0) return -1;
+  const size_t nlen = std::strlen(name);
+  if (nlen < 6 || std::strcmp(name + nlen - 5, ".wasm") != 0) return -2;
+  if (len > 1024 * 1024) return -3;
+  char pdir[900];
+  std::snprintf(pdir, sizeof(pdir), "%s/plugins", yp_home());
+  if (yp_ensure(pdir) != 0) return -4;
+  char path[1000];
+  std::snprintf(path, sizeof(path), "%s/%s", pdir, name);
+  FILE* f = std::fopen(path, "wb");
+  if (!f) return -5;
+  const size_t wrote = std::fwrite(data, 1, (size_t)len, f);
+  std::fclose(f);
+  if (wrote != (size_t)len) return -5;
+  const int rc = wasm_host_reload(pdir);
+  if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[8] 插件导入后载入失败：%s", wasm_host_error());
+  return rc == 0 ? 0 : -6;
+}
+
 int Yieyu_MakeKaraoke(const char* srcWav, const char* dstWav) {
   if (!g_inited.load()) return -1;
   return yieyu::Engine::Instance().KaraokeStart(srcWav, dstWav);

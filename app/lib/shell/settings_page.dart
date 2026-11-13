@@ -26,6 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // 输出采样率（模块 14）：0=自动（PCM 跟源、DSD→192k）
   int _rate = 0;
   bool _dsp = false;
+  bool _plugin = false;   // [8] wasm 音效插件
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -199,6 +200,16 @@ class _SettingsPageState extends State<SettingsPage> {
                       _toast(v == 0 ? '下次起播：跟随音源' : '下次起播：升频到 ${v ~/ 1000} kHz');
                     },
                   ),
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.extension_outlined),
+                  title: const Text('音效插件'),
+                  subtitle: const Text('随包的 wasm 插件（不下发 APK 也能换效果）'),
+                  value: _plugin,
+                  onChanged: (v) {
+                    setState(() => _plugin = v);
+                    JsbClient.instance.setPlugin(v);   // [8]
+                  },
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.equalizer),

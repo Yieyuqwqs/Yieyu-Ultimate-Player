@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ffi' show Abi;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import 'diag/boot_log.dart';
@@ -46,6 +46,7 @@ class _BootstrapperState extends State<_Bootstrapper> {
         JsbClient.instance.startPump();
         await _verifyIntegrity();
         await _installBuiltinScripts();
+        await _installBuiltinPlugins();
       }
       BootLog.instance.write('boot ok, abi=${Abi.current()}');
     } catch (e) {
@@ -71,6 +72,20 @@ class _BootstrapperState extends State<_Bootstrapper> {
         }
       }
       JsbClient.instance.reloadScripts();
+    } catch (_) {}
+  }
+
+  /// [8] 随包插件：把 assets/plugins/*.wasm 交给原生（它会落盘到 <home>/plugins 并加载）。
+  /// 没有插件也是正常情况（插件是可选能力），所以这里一律静默。
+  Future<void> _installBuiltinPlugins() async {
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final keys = manifest.listAssets().where((k) => k.startsWith('assets/plugins/') && k.endsWith('.wasm'));
+      for (final key in keys) {
+        final data = await rootBundle.load(key);
+        final name = key.split('/').last;
+        JsbClient.instance.importPlugin(name, data.buffer.asUint8List());
+      }
     } catch (_) {}
   }
 

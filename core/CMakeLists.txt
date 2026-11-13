@@ -107,7 +107,7 @@ set(SRC_NET     src/net/stream_http.c                 # [9] 自研 socket HTTP/1
 set(SRC_STORE   src/store/kv_store.cpp)                # [20] 自研追加日志（唯一写者）
 set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
 set(SRC_SCRIPT  src/script/lua_sandbox.cpp)            # [7]
-set(SRC_WASM    src/wasm/host_wasmedge.cpp)            # [8]
+set(SRC_WASM    src/wasm/wasm_host.cpp)                # [8] 自研 wasm MVP 解释器
 set(SRC_ASM     ../asm/neon_ct_compare.S)              # [12]
 set(SRC_AI      src/ai/vocals.cpp)                     # [18] 离线人声消除（Python 生成核）
 

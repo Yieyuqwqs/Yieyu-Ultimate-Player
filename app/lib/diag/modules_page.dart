@@ -132,7 +132,7 @@ class _ModulesPageState extends State<ModulesPage> {
       _row('5', 'Go 协程搜歌', true, '首页搜索走 libyieyu_fetch.so'),
       _row('6', 'TypeScript 清洗', true, '构建期生成 Song 模型（见 lib/model）'),
       _row('7', 'Lua 沙箱', _scripts != 0, '脚本登记 $_scripts 个 / 拒绝 $_rejected 个'),
-      _row('8', 'wasm 插件宿主', true, '自研解释器（设置里可开关音频插件）'),
+      _row('8', 'wasm 插件宿主', true, '自研解释器 plug=${kv['plug'] ?? '?'}（设置里可开关）'),
       _row('9', '自研 HTTP 取流', _httpStatus > 0, _http),
       _row('10', 'ring 卡密验签', kv['lic'] == '1', 'lic=${kv['lic'] ?? '?'}（-1=无库/无公钥）'),
       _row('11', '防篡改自校验', kv['integ'] == '1',
