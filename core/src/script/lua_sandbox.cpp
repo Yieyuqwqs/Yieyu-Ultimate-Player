@@ -541,15 +541,16 @@ int load_script(const char* name, const char* input) {
     return -1;
   }
   g_used = 0;
+  const int top = lua_gettop(g_L);          // ★ 用 settop 收尾：脚本不返回值时 pop 会按到 base 以下
   lua_pushstring(g_L, input ? input : "");
   lua_setglobal(g_L, "input");
   if (luaL_dofile(g_L, full) != LUA_OK) {
     const char* err = lua_tostring(g_L, -1);
     bb_write(YIEYU_LOG_ERROR, "[7] 脚本执行失败 %s：%s", name, err ? err : "?");
-    lua_pop(g_L, 1);
+    lua_settop(g_L, top);
     return -2;
   }
-  lua_pop(g_L, 1);      // 丢掉脚本顶层返回值
+  lua_settop(g_L, top);                     // 丢掉脚本顶层返回值（0 个 1 个都安全）
   return 0;
 }
 }  // namespace
@@ -564,17 +565,18 @@ extern "C" int lua_sandbox_run(const char* name, const char* input, char* out, i
   g_used = 0;
   lua_pushstring(g_L, input ? input : "");
   lua_setglobal(g_L, "input");
+  const int top = lua_gettop(g_L);          // ★ settop 收尾，别用 lua_pop
   if (luaL_dofile(g_L, full) != LUA_OK) {
     const char* err = lua_tostring(g_L, -1);
     bb_write(YIEYU_LOG_ERROR, "[7] 脚本执行失败 %s：%s", name, err ? err : "?");
-    lua_pop(g_L, 1);
+    lua_settop(g_L, top);
     return -2;
   }
   if (out && cap > 0) {
-    const char* r = lua_tostring(g_L, -1);
+    const char* r = lua_gettop(g_L) > top ? lua_tostring(g_L, top + 1) : nullptr;
     snprintf(out, cap, "%s", r ? r : "");
   }
-  lua_pop(g_L, 1);
+  lua_settop(g_L, top);
   return 0;
 }
 
