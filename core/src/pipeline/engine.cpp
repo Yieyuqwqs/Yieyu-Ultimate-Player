@@ -25,10 +25,10 @@ void  yieyu_fetch_free(char* p);
 #endif
 
 // [10] 验签：Rust + ring 编的 libyieyu_license.so（以前只编、不进包，也从来没被调用）
+// ★ 不做静态链：Rust cdylib 没有 SONAME，链进 core 会把绝对路径写进 DT_NEEDED，
+//   装机 dlopen 必炸（CI 15.5 就是拦这个）。运行时 dlopen 更稳，缺库也不崩。
 #ifdef YIEYU_HAVE_LICENSE
-extern "C" {
-int yieyu_license_has_pubkey(void);
-}
+#include <dlfcn.h>
 #endif
 
 namespace yieyu {
@@ -73,15 +73,31 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   bool licensed = true;
 #ifdef YIEYU_HAVE_LICENSE
   {
-    const int hasKey = yieyu_license_has_pubkey();
-    lic_.store(hasKey == 1 ? 1 : 0);
-    if (hasKey != 1) {
-      bb_write(YIEYU_LOG_ERROR, "[10] 验签库已加载，但内嵌公钥缺失（has_pubkey=%d）", hasKey);
+    void* h = dlopen("libyieyu_license.so", RTLD_NOW | RTLD_LOCAL);
+    if (!h) {
+      const char* e = dlerror();
+      lic_.store(-1);
+      bb_write(YIEYU_LOG_ERROR, "[10] dlopen libyieyu_license.so 失败：%s", e ? e : "?");
+    } else {
+      typedef int (*has_pubkey_fn)(void);
+      has_pubkey_fn fn = nullptr;
+      *reinterpret_cast<void**>(&fn) = dlsym(h, "yieyu_license_has_pubkey");
+      if (!fn) {
+        lic_.store(-1);
+        bb_write(YIEYU_LOG_ERROR, "[10] 验签库里没有 yieyu_license_has_pubkey 符号");
+      } else {
+        const int hasKey = fn();
+        lic_.store(hasKey == 1 ? 1 : 0);
+        if (hasKey != 1) {
+          bb_write(YIEYU_LOG_ERROR, "[10] 验签库在，但内嵌公钥缺失（has_pubkey=%d）", hasKey);
+        }
+      }
+      // ★ 故意不 dlclose：验签句柄要活到进程结束
     }
   }
 #else
   lic_.store(-1);
-  bb_write(YIEYU_LOG_ERROR, "[10] 没有 libyieyu_license.so，验签走空实现");
+  bb_write(YIEYU_LOG_ERROR, "[10] 构建期就没有 libyieyu_license.so，验签走空实现");
 #endif
   if (!licensed) {
     state_.store(State::kUnlicensed);

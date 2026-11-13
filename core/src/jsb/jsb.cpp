@@ -33,9 +33,27 @@ void set_err(const char* fmt, ...) {
 
 extern "C" {
 
+// [4] Zig 定长池：命令帧（≤4KB）从这里取，避开每条 UI 命令都碰 malloc。
+// ★ 用**弱符号**声明：libyieyu_mem.a 没链进来、或 Zig 侧改名了，也不会链接失败，
+//   运行时指针为 null → 自动退化成"直接用调用方缓冲"。接模块不能把构建搞红。
+#if defined(YIEYU_HAVE_MEM) && (defined(__GNUC__) || defined(__clang__))
+extern "C" {
+int   yieyu_mem_init(unsigned int blocks_per_size) __attribute__((weak));
+void* yieyu_mem_alloc(size_t size) __attribute__((weak));
+void  yieyu_mem_free(void* p, size_t size) __attribute__((weak));
+int   yieyu_mem_alive(void) __attribute__((weak));
+}
+#define YIEYU_MEM_READY (yieyu_mem_alloc != nullptr)
+#else
+#define YIEYU_MEM_READY (0)
+#endif
+
 int Yieyu_Init(const char* filesDir, const char* abi, uint32_t flags) {
   if (g_inited.exchange(true)) return 0;
   LOGI("JSB init abi=%s filesDir=%s flags=0x%x ver=%d", abi ? abi : "?", filesDir ? filesDir : "?", flags, YIEYU_JSB_ABI);
+#ifdef YIEYU_HAVE_MEM
+  if (yieyu_mem_init) yieyu_mem_init(512);   // 每档 512 块，启动时一次拿满
+#endif
   return yieyu::Engine::Instance().Boot(filesDir, abi ? abi : "");
 }
 
@@ -49,7 +67,24 @@ int Yieyu_Post(const uint8_t* fbs, size_t len) {
   if (!g_inited.load() || !fbs || len == 0) return -1;
   std::lock_guard<std::mutex> lk(g_postMu);
   bb_new_trace();                       // 贯穿这一次命令的整条链路
-  return yieyu::Engine::Instance().HandleCommand(fbs, len);
+
+  // 命令帧落进 Zig 池（≤4KB）。池子拿不到就直用原缓冲 —— 绝不因为分配失败丢命令。
+  const uint8_t* frame = fbs;
+  void* slab = nullptr;
+#ifdef YIEYU_HAVE_MEM
+  if (len <= 4096 && YIEYU_MEM_READY) {
+    slab = yieyu_mem_alloc(len);
+    if (slab) {
+      std::memcpy(slab, fbs, len);
+      frame = static_cast<const uint8_t*>(slab);
+    }
+  }
+#endif
+  const int rc = yieyu::Engine::Instance().HandleCommand(frame, len);
+#if defined(YIEYU_HAVE_MEM)
+  if (slab && yieyu_mem_free) yieyu_mem_free(slab, len);
+#endif
+  return rc;
 }
 
 size_t Yieyu_Poll(uint8_t* out, size_t cap) {
@@ -232,6 +267,12 @@ const char* Yieyu_LastError(void) {
 void Yieyu_Stats(char* out, size_t cap) {
   if (!out || cap == 0) return;
   yieyu::Engine::Instance().Stats(out, cap);
+#ifdef YIEYU_HAVE_MEM
+  // 模块 4 是否真的活着（池子初始化失败也不会让 App 崩，这里只是如实报）
+  const int mem = (yieyu_mem_alive != nullptr) ? yieyu_mem_alive() : 0;
+  const size_t n = std::strlen(out);
+  if (n + 12 < cap) std::snprintf(out + n, cap - n, " mem=%d", mem);
+#endif
 }
 
 }  // extern "C"

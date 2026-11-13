@@ -68,6 +68,37 @@ pub const Pool = struct {
     }
 };
 
+// ── C ABI：模块 4 唯一对外的面（给 C++ 的 JSB 命令缓冲用）────────────────
+// 为什么是命令帧：音频线程零分配是红线，真正会反复 malloc 的只有"UI 每来一条命令"
+// 这种小块。命令帧 ≤4KB，正好落在池子的尺寸段里。
+var g_pool: ?Pool = null;
+
+export fn yieyu_mem_init(blocks_per_size: u32) c_int {
+    if (g_pool != null) return 0;
+    const n: u32 = if (blocks_per_size == 0) 512 else blocks_per_size;
+    g_pool = Pool.init(std.heap.c_allocator, n) catch return -1;
+    return 0;
+}
+
+/// 分配 ≤4KB 的块；返回 null 表示该档耗尽（调用方必须降级，不许 panic）
+export fn yieyu_mem_alloc(size: usize) ?*anyopaque {
+    const p = if (g_pool) |*pp| pp else return null;
+    const slice = p.alloc(size) orelse return null;
+    return @ptrCast(slice.ptr);
+}
+
+export fn yieyu_mem_free(ptr: ?*anyopaque, size: usize) void {
+    if (ptr == null) return;
+    const p = if (g_pool) |*pp| pp else return;
+    const bytes: [*]u8 = @ptrCast(ptr.?);
+    p.free(bytes[0..size]);
+}
+
+/// 池子还活着就返回 1（给 Stats 显示"模块4 在跑"）
+export fn yieyu_mem_alive() c_int {
+    return if (g_pool != null) 1 else 0;
+}
+
 test "池子 O(1) 拿放，耗尽返回 null 而不是 panic" {
     const a = std.testing.allocator;
     var p = try Pool.init(a, 4);

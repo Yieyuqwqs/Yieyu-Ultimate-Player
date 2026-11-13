@@ -45,6 +45,10 @@ set(_zig "${YIEYU_OUT}/zig/lib/libyieyu_mem.a")
 if(NOT EXISTS "${_zig}")
   set(_zig "${YIEYU_OUT}/zig/libyieyu_mem.a")
 endif()
+if(EXISTS "${_zig}")
+  # 让 JSB 知道"池子可用"，命令帧才会走 Zig 的 slab
+  add_compile_definitions(YIEYU_HAVE_MEM=1)
+endif()
 
 # ─── [7] LuaJIT：脚本引擎。有就真跑，没有就 stub（导入链路照常）──────
 set(LUAJIT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua")
@@ -149,12 +153,10 @@ endif()
 if(YIEYU_ENABLE_AI)
   list(APPEND YIEYU_LIBS onnxruntime)
 endif()
-if(TARGET yieyu_license)
-  list(APPEND YIEYU_LIBS yieyu_license)
-endif()
-if(TARGET yieyu_store)
-  list(APPEND YIEYU_LIBS yieyu_store)
-endif()
+# ★ Rust 的 license/store **不做静态链**：cdylib 没有 SONAME，链进来会把绝对路径写进
+#   DT_NEEDED（CI 15.5 就是拦这个，装机 dlopen 必炸）。改为运行时 dlopen，
+#   由 YIEYU_HAVE_LICENSE / YIEYU_HAVE_STORE 控制调用点是否编译（见 engine.cpp）。
+#   文件仍会被 app/build-app.sh 拷进 jniLibs，所以装机后一定找得到。
 if(EXISTS "${_zig}")
   list(APPEND YIEYU_LIBS "${_zig}")
 endif()

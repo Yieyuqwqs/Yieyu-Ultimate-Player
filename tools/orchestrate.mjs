@@ -47,14 +47,16 @@ const STEPS = [
     cwd: 'zig', out: ['zig'], inputs: ['zig'] },
 
   { id: 'rust', deps: ['doctor'], bin: 'cargo', desc: '模块3/10/19 三个 .so', cwd: 'rust',
-    // ★ 以前这里只跑 cargo，产物留在 rust/target/ 下没人搬 —— 而 CMake 和打包脚本
-    //   只认 out/rust/aarch64-linux-android/release/。结果：三个 Rust 模块永远
-    //   "缺库 → 走空实现"，从来没进过 APK。编译完必须落位。
+    // ★ 以前只跑 cargo，产物留在 rust/target/ 没人搬 → CMake 永远"缺库 → 走空实现"，
+    //   三个 Rust 模块一次都没进过 APK。编译完必须落位到 out/rust/。
+    //   （不在这里往 core 静态链：Rust cdylib 没有 SONAME，链进去会把绝对路径写进
+    //    DT_NEEDED，装机 dlopen 必炸 —— 改为运行时 dlopen，见 engine.cpp。）
     cmd: () => ['bash', '-c',
-      'cargo build --release --target aarch64-linux-android || exit 1; ' +
+      'set -e; ' +
+      'cargo build --release --target aarch64-linux-android; ' +
       'dst="$YIEYU_OUT/rust/aarch64-linux-android/release"; mkdir -p "$dst"; ' +
       'for n in yieyu_gesture yieyu_license yieyu_store; do ' +
-      'cp -fv "target/aarch64-linux-android/release/lib$n.so" "$dst/" || exit 1; done'],
+      '  cp -fv "target/aarch64-linux-android/release/lib$n.so" "$dst/"; done'],
     env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['rust'], inputs: ['rust'] },
 
   { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
