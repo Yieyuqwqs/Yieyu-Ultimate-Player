@@ -38,16 +38,8 @@ class _RiveStageState extends State<RiveStage> {
       return CustomPaint(
         painter: _FallbackPainter(widget.eqDb),
         size: Size.infinite,
-        child: _exists == null
-            ? const SizedBox.shrink()
-            : const Align(
-                alignment: Alignment.bottomRight,
-                child: Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Text('Rive 资源缺失（降级绘制）',
-                      style: TextStyle(fontSize: 9, color: Colors.white24)),
-                ),
-              ),
+        // UI 静默铁律：资源缺失也不说话，只画条淡线。
+        child: const SizedBox.shrink(),
       );
     }
     return rive.RiveAnimation.asset(

@@ -202,6 +202,39 @@ jobs:
           echo "变更: native=${{ steps.chg.outputs.native }} go=${{ steps.chg.outputs.go }} ts=${{ steps.chg.outputs.ts }} app=${{ steps.chg.outputs.app }}"
           ccache --show-stats 2>/dev/null | head -8 || true
 
+
+      # ── 显式保存（关键：job 失败时 actions/cache 默认**不保存**，
+      #    这正是之前 out/ccache 一条缓存都没有、命中率 0% 的原因）──
+      - name: 22. 保存 out/（失败也存，下次必命中）
+        if: always() && steps.ocache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: out
+          key: out-v2-${{ hashFiles('core/**','rust/**','zig/**','asm/**','idl/**','go/**','ts/**','wasm/**','app/**','tools/**','build.sh') }}
+
+      - name: 23. 保存 ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-v2-${{ hashFiles('core/**','asm/**') }}-${{ github.run_id }}
+
+      - name: 24. 保存 sccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.cache/sccache
+          key: sccache-v2-${{ hashFiles('rust/**') }}-${{ github.run_id }}
+
+      - name: 25. 保存 Go 缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ hashFiles('go/**') }}
+
       - name: 21. 失败时留日志
         if: failure()
         run: |

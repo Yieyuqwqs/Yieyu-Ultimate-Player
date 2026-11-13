@@ -98,6 +98,14 @@ class JsbClient {
   late final _ShutdownDart _shutdown =
       _lib.lookupFunction<_ShutdownNative, _ShutdownDart>('Yieyu_Shutdown');
 
+  // ── 黑匣子 / 热更（模块 0 与 7）────────────────────────────────
+  late final _ExportDart _export =
+      _lib.lookupFunction<_ExportNative, _ExportDart>('Yieyu_ExportLogs');
+  late final _ReloadDart _reload =
+      _lib.lookupFunction<_ReloadNative, _ReloadDart>('Yieyu_ReloadScripts');
+  late final _IsPublicDart _logIsPublic =
+      _lib.lookupFunction<_IsPublicNative, _IsPublicDart>('Yieyu_LogIsPublic');
+
   final _snapCtrl = StreamController<YieyuSnapshot>.broadcast();
   final _songCtrl = StreamController<List<Map<String, Object?>>>.broadcast();
 

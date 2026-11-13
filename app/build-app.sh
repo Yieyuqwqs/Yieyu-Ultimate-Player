@@ -9,6 +9,17 @@ cd "$HERE"
 # 1.5) 黑匣子要写 /storage/emulated/0/yieyu → 注入存储权限（幂等）
 node patch_manifest.mjs || true
 
+# 1.6) R8 规则：保住 JNI 名字（Flutter release 会跑 R8 裁 Java/Kotlin 层）
+if [[ -f android/app/proguard-rules.pro ]]; then
+  if ! grep -q "yieyu.ultimate.service" android/app/proguard-rules.pro 2>/dev/null; then
+    cat "$HERE/proguard-yieyu.pro" >> android/app/proguard-rules.pro
+    echo "→ 已追加 yieyu R8 规则"
+  fi
+fi
+if [[ -f android/app/build.gradle ]] && ! grep -q "proguardFiles.*proguard-rules" android/app/build.gradle; then
+  sed -i 's/release {/release {\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"/' android/app/build.gradle || true
+fi
+
 # 1) 安卓壳子：第一次跑才生成（已存在就跳过，不动我们改过的东西）
 if [[ ! -d android ]]; then
   echo "→ flutter create 生成安卓壳"
