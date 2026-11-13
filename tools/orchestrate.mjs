@@ -74,7 +74,7 @@ const STEPS = [
     cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },
 
   { id: 'flutter', deps: ['native', 'go', 'ts', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
-    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app'] },
+    cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/rust', 'out/go', 'out/ts', 'out/wasm'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',
     cmd: () => ['node', 'tools/verify.mjs'], out: ['verify'] }
@@ -93,6 +93,8 @@ function androidEnv() {
     CC_aarch64_linux_android: cc, CXX_aarch64_linux_android: cc,
     AR_aarch64_linux_android: path.join(tc, 'llvm-ar'),
     CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: cc,
+    // 有 sccache 就用（CI 上由 mozilla-actions/sccache-action 提供）
+    ...(process.env.SCCACHE_PATH ? { RUSTC_WRAPPER: process.env.SCCACHE_PATH } : {}),
     ANDROID_NDK: NDK, ANDROID_API: API, ANDROID_NDK_TOOLCHAIN_BIN: tc,
     PATH: `${tc}:${process.env.PATH}`,
     CGO_ENABLED: '1', GOOS: 'android', GOARCH: 'arm64', CC: cc

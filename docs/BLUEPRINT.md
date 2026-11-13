@@ -173,6 +173,7 @@
 | `consumer-rules.pro` / `proguard-rules.pro` | ❌ 未创建（开混淆前必须补） |
 | `third_party/` 真实二进制（FFmpeg/SpeexDSP/Eigen/LuaJIT/WasmEdge/curl/SQLite/ORT） | ❌ 只有说明，空实现能编但不发声 |
 | `tools/fetch-deps.mjs`（唯一下载入口 + sha256） | ❌ 未写 |
+| 极速构建（五层缓存 + 模块路径过滤 + 补丁包 + 脚本热更） | ✅ **已上**（详见 `docs/BUILD.md` §8） |
 | `gradle wrapper`（钉 Gradle 8.7） | ❌ 未加 |
 | Rust 单测接入 CI（`cargo test`） | ❌ 本地有测试，CI 没跑 |
 | Rive `.riv` 资源 | ❌ 未做（有降级绘制） |

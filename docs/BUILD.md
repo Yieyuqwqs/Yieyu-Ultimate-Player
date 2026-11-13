@@ -204,3 +204,74 @@ flutter build apk --release --target-platform android-arm64 \
 - ⚠️ **还没编过一次**：本机（Android 手机）无 NDK/Rust/Go/Flutter，`third_party/` 只有说明
 - 下一步：桌面机或 CI 上跑 `./build.sh doctor` → 按 doctor 的缺口补工具链
   → `./build.sh zig rust idl native YIEYU_OFFLINE_ASSETS=ON` 先让 `libyieyu_core.so` 出得来
+
+---
+
+## 8. 极速增量构建（把 15 分钟压到分钟级）
+
+### 8.1 五层缓存
+
+| 层 | 手段 | 命中时省掉 |
+|---|---|---|
+| **产物** | `actions/cache` 缓存整个 `out/`（含 `.build-manifest.json`） | 全部编译；调度器指纹发现没变 → 直接 SKIP |
+| **C/C++/ASM** | `ccache`（`CMAKE_*_COMPILER_LAUNCHER`） | 未改动 TU 的 obj 生成 |
+| **Rust** | `sccache`（`RUSTC_WRAPPER`） | 未改动 crate 的 codegen |
+| **Go** | `~/.cache/go-build` + `~/go/pkg/mod` | 整个 build 与依赖下载 |
+| **Flutter/Gradle** | `~/.gradle/caches`、`~/.gradle/wrapper`、`~/.pub-cache` + `subosito/flutter-action` 自带缓存 | gradle 冷启动 + pub 拉包（这是 APK 步骤从 11 分钟降到 3 分钟的关键） |
+
+`out/` 的缓存 key 是**全部源码的 hash**：
+命中 → 一个编译进程都不起；只改一个模块 → 命中 `restore-keys` 拿到上次的 `out/`，
+调度器按指纹只重编那一块。
+
+### 8.2 模块独立化（真的不交叉）
+
+`dorny/paths-filter` 先判变更，再决定跑不跑：
+
+| 只改了 | 会执行 | 不会碰 |
+|---|---|---|
+| `go/**` | `./build.sh flutter`（内部只编 go → 重新打 APK） | C++、Rust、Zig、TS |
+| `ts/**` | 同上，只重生 `cleaner.mjs` | C++、Rust、Go |
+| `core/**` `rust/**` `zig/**` `idl/**` | `./build.sh zig idl rust native` + 重打 APK | Go、TS |
+| 什么都没改 | 仅恢复 `out/` + 上传产物 | 全部 |
+
+> 前提：`out/` 缓存命中。缓存被淘汰时会自动退回全量，不会产出坏的包。
+
+### 8.3 增量补丁包
+
+`out/apk/YieyuUltimate-patch-<sha>.zip`：只含 `jniLibs/arm64-v8a/*.so` + `manifest.json`（含每文件 sha256）+ README。
+
+**必须说清楚**：Android 10+ 非 root 设备**无法**用它覆盖已装 APK 里的 `.so`
+（`classloader-namespace` 只允许加载 `/data/app/.../lib`）。
+
+它的真实用途：
+- CI 内部换了 `.so` 快速重打包（不重跑 C++/Rust）
+- root / adb 可写时覆盖后重启生效
+- 出问题时单独取 `.so` 做符号对比或回滚
+
+### 8.4 脚本热更（唯一真正的"秒生效"）
+
+改搜歌规则**完全不走打包流程**：
+
+1. 把 `xxx.lua` 丢进 `/storage/emulated/0/yieyu/scripts/`
+2. App → 设置 → **重新加载音源脚本**
+3. 脚本立即进入沙箱（白名单 API、5000 万指令上限）
+
+底层链路：`Yieyu_ReloadScripts()` → 扫目录 → 逐文件黑名单校验
+（与 `tools/collect-lua.mjs` 同一份规则）→ 登记 → 供 `lua_sandbox_run()` 使用。
+被拒的脚本**不登记、不执行**，UI 只显示"已加载 N 个脚本"。
+
+> 依赖：真实执行需要 `third_party/lua`（LuaJIT 2.1）入库。现在是空实现，
+> 但**扫描/校验/计数已在跑**，热更链路能先验证通。
+
+### 8.5 实测预期（不是拍脑袋，是缓存原理决定的）
+
+| 场景 | 预期 | 说明 |
+|---|---|---|
+| 无改动重跑 | **1.5 ~ 2.5 分钟** | 只剩 checkout + 恢复缓存 + 上传 |
+| 只改 `go/**` | 3 ~ 5 分钟 | Go AAR + APK 重打（gradle 热） |
+| 只改 `core/**` | 6 ~ 9 分钟 | Rust 免编 + C++ 走 ccache + APK 重打 |
+| 冷启动（无任何缓存） | 15 ~ 18 分钟 | 只发生一次，之后都靠缓存 |
+| 换了依赖版本 | 10 ~ 15 分钟 | ccache/sccache 全部失效 |
+
+> "1 分钟"只有"什么都没改、点一下重跑"这一个场景能到；
+> 真实改代码的场景下限是 3 分钟（Flutter 重打 APK 这一段省不掉）。

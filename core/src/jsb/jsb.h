@@ -59,4 +59,9 @@ YIEYU_API int  Yieyu_LogDir(char* outDir, size_t cap);
 YIEYU_API int  Yieyu_LogIsPublic(void);                      // 1=真的写进了 /storage/emulated/0/yieyu
 YIEYU_API void Yieyu_SetTrace(const char* traceId);
 
+// ── 模块 7 热更：脚本导入（不打包、不重启，秒生效）─────────────────
+// 扫描 /storage/emulated/0/yieyu/scripts/*.lua，黑名单校验后加载。
+// loaded/rejected 可传 NULL。返回 0=完成。
+YIEYU_API int Yieyu_ReloadScripts(int* loaded, int* rejected);
+
 }

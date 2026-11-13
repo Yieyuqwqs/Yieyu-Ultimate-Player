@@ -72,6 +72,8 @@ typedef _SnapNative = Int32 Function(Pointer<_CSnapshot>);
 typedef _SnapDart = int Function(Pointer<_CSnapshot>);
 typedef _ExportNative = Int32 Function(Pointer<Utf8>, IntPtr);
 typedef _ExportDart = int Function(Pointer<Utf8>, int);
+typedef _ReloadNative = Int32 Function(Pointer<Int32>, Pointer<Int32>);
+typedef _ReloadDart = int Function(Pointer<Int32>, Pointer<Int32>);
 typedef _IsPublicNative = Int32 Function();
 typedef _IsPublicDart = int Function();
 typedef _ShutdownNative = Void Function();
@@ -174,6 +176,24 @@ class JsbClient {
       return null;
     } finally {
       malloc.free(buf);
+    }
+  }
+
+  /// 热更音源脚本（模块 7）。返回 (加载数, 被拒数)；失败返回 null。
+  (int, int)? reloadScripts() {
+    final a = malloc.allocate<Int32>(sizeOf<Int32>());
+    final b = malloc.allocate<Int32>(sizeOf<Int32>());
+    try {
+      a.value = 0;
+      b.value = 0;
+      final rc = _reload(a, b);
+      if (rc != 0) return null;
+      return (a.value, b.value);
+    } catch (_) {
+      return null;
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
     }
   }
 

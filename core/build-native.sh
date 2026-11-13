@@ -7,7 +7,16 @@ OUT="${YIEYU_OUT:?需要 YIEYU_OUT}"
 BLD="$OUT/native/build"
 INS="$OUT/native/arm64"
 
-cmake -S "$HERE" -B "$BLD" -G Ninja \
+LAUNCHER=""
+if command -v ccache >/dev/null 2>&1; then
+  LAUNCHER="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_ASM_COMPILER_LAUNCHER=ccache"
+  export CCACHE_DIR="${CCACHE_DIR:-$HOME/.ccache}"
+  export CCACHE_BASEDIR="$HERE"
+  export CCACHE_SLOPPINESS="include_file_ctime,include_file_mtime,time_macros"
+  ccache --zero-stats >/dev/null 2>&1 || true
+fi
+
+cmake -S "$HERE" -B "$BLD" -G Ninja $LAUNCHER \
   -DCMAKE_TOOLCHAIN_FILE="$HERE/cmake/android-arm64.cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DYIEYU_OUT="$OUT" \
@@ -16,6 +25,7 @@ cmake -S "$HERE" -B "$BLD" -G Ninja \
 
 cmake --build "$BLD" -j "${YIEYU_JOBS:-4}"
 mkdir -p "$INS"
+command -v ccache >/dev/null 2>&1 && ccache --show-stats | head -12 || true
 cp -v "$BLD"/libyieyu_core.so "$INS"/
 "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded "$INS/libyieyu_core.so" || true
 echo "→ $INS/libyieyu_core.so  $(stat -c%s "$INS/libyieyu_core.so" 2>/dev/null || echo '?') bytes"

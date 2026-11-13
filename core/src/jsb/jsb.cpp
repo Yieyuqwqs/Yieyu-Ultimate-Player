@@ -5,6 +5,7 @@
 #include "../common/log.h"
 #include "../pipeline/engine.h"
 #include "../common/blackbox.h"
+#include "../script/lua_sandbox.h"
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -67,6 +68,17 @@ int Yieyu_LogDir(char* outDir, size_t cap) {
 }
 int Yieyu_LogIsPublic(void) { return bb_is_public(); }
 void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
+
+int Yieyu_ReloadScripts(int* loaded, int* rejected) {
+  // 目录跟着黑匣子走：公共目录可用就用公共目录，否则用私有目录
+  char dir[600];
+  std::snprintf(dir, sizeof(dir), "%s/scripts", bb_dir());
+  const int rc = lua_sandbox_reload(dir, loaded, rejected);
+  if (rc != 0) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本目录不可用：%s", dir);
+  }
+  return rc;
+}
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }
 const char* Yieyu_LastError(void) { return g_lastError; }

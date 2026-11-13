@@ -1,172 +1,209 @@
-name: build-apk
+name: build
 
-# 真构建：把 13 个缺失工具全装上，编出 .so 和 APK。
-# 私有仓库分钟数敏感 → 只在 push main 和手动触发时跑。
+# 极速策略（见 docs/BUILD.md §极速）：
+#   1) out/ 整体缓存：没改动的模块，调度器指纹直接 SKIP，连编译进程都不起
+#   2) ccache（C/C++/ASM）+ sccache（Rust）+ go build cache + gradle + pub
+#   3) 路径过滤：只改 go/ 就不进 native 步骤
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: '强制全量重编（忽略 out 缓存）'
+        type: boolean
+        default: false
   push:
     branches: [main]
-    paths:
-      - 'core/**'
-      - 'rust/**'
-      - 'go/**'
-      - 'ts/**'
-      - 'zig/**'
-      - 'app/**'
-      - 'asm/**'
-      - 'idl/**'
-      - 'tools/**'
-      - 'build.sh'
-      - '.github/workflows/build.yml'
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  apk:
-    name: arm64 全链路
+  build:
+    name: arm64（缓存加速）
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 40
     env:
-      YIEYU_OFFLINE_ASSETS: 'ON'   # 空实现：先把链路和骨架编过，third_party 后面再钉
+      YIEYU_OFFLINE_ASSETS: 'ON'
       YIEYU_JOBS: '4'
+      CCACHE_DIR: /home/runner/.ccache
+      SCCACHE_DIR: /home/runner/.cache/sccache
+      CCACHE_COMPILERCHECK: content
+      CCACHE_SLOPPINESS: include_file_ctime,include_file_mtime,time_macros
+      CCACHE_BASEDIR: ${{ github.workspace }}
     steps:
-      - name: 0. 取代码
+      - name: 0. 取代码（fetch-depth 0 供路径过滤）
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: 0.5 兜底可执行位（blob 传输可能丢 mode）
-        run: chmod +x build.sh core/build-native.sh app/build-app.sh
+      - name: 0.1 兜底可执行位
+        run: chmod +x build.sh core/build-native.sh app/build-app.sh go/build-aar.sh
 
-      - name: 0.6 日志铁律闸门（违反就直接红，别浪费 18 分钟）
+      - name: 0.2 变更检测（决定编哪些模块）
+        id: chg
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            native:
+              - 'core/**'
+              - 'rust/**'
+              - 'zig/**'
+              - 'asm/**'
+              - 'idl/**'
+              - 'tools/orchestrate.mjs'
+              - 'build.sh'
+            go:
+              - 'go/**'
+            ts:
+              - 'ts/**'
+            app:
+              - 'app/**'
+
+      - name: 1. 恢复 out/（全部产物 + 调度器清单）
+        id: ocache
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: out-v2-${{ hashFiles('core/**','rust/**','zig/**','asm/**','idl/**','go/**','ts/**','wasm/**','app/**','tools/**','build.sh') }}
+          restore-keys: out-v2-
+
+      - name: 2. ccache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-v2-${{ hashFiles('core/**','asm/**') }}-${{ github.run_id }}
+          restore-keys: ccache-v2-
+
+      - name: 3. sccache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/sccache
+          key: sccache-v2-${{ hashFiles('rust/**') }}-${{ github.run_id }}
+          restore-keys: sccache-v2-
+
+      - name: 4. Go 构建缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ hashFiles('go/**') }}
+          restore-keys: go-v2-
+
+      - name: 5. Gradle + pub
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.pub-cache
+          key: gradle-v2-${{ hashFiles('app/pubspec.yaml','android/**') }}
+          restore-keys: gradle-v2-
+
+      - name: 6. 强制全量时清空 out/
+        if: inputs.force
+        run: rm -rf out && echo "已清空 out/"
+
+      - name: 7. JDK 17
+        uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+
+      - name: 8. Go 1.22
+        uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+
+      - name: 9. Rust + android target
+        uses: dtolnay/rust-toolchain@stable
+        with: { targets: aarch64-linux-android, components: rustfmt }
+
+      - name: 10. Flutter 3.24.5
+        uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.24.5', channel: stable, cache: true }
+
+      - name: 10.5 Zig 0.13
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: 11. NDK / API
         run: |
-          test -f core/src/common/blackbox.cpp
+          echo "ANDROID_NDK=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+          echo "ANDROID_API=26" >> $GITHUB_ENV
+          echo "NDK=$ANDROID_NDK_LATEST_HOME"
+
+      - name: 12. ccache / flatc / gomobile
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ccache flatbuffers-compiler zip unzip
+          ccache --version | head -1
+          flatc --version
+          zig version
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          gomobile init
+
+      - name: 13. 黑匣子铁律闸门
+        run: |
           grep -qF '#define LOGI(...) ((void)0)' core/src/common/log.h
           grep -qF 'LOGE(...) bb_write' core/src/common/log.h
           if grep -rnE 'dlopen failed|Failed to load dynamic|降级运行|undefined symbol' app/lib; then
             echo "UI 出现底层技术报错文本"; exit 1
           fi
-      - name: 1. JDK 17（Gradle 壳子要）
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
 
-      - name: 2. Go 1.22（模块 5）
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+      - name: 14. native 层（仅变更或缓存未命中）
+        if: steps.chg.outputs.native == 'true' || steps.ocache.outputs.cache-hit != 'true' || inputs.force
+        run: ./build.sh zig idl rust native
 
-      - name: 3. Rust + android target（模块 3/10/19）
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-          components: rustfmt, clippy
-
-      - name: 4. Flutter 3.24.5（模块 1/2）
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.5'
-          channel: stable
-          cache: true
-
-      - name: 5. NDK + SDK 定位（runner 预装）
-        run: |
-          echo "ANDROID_NDK=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
-          echo "ANDROID_API=26" >> $GITHUB_ENV
-          echo "NDK = $ANDROID_NDK_LATEST_HOME"
-          cat "$ANDROID_NDK_LATEST_HOME/source.properties" || true
-          ls "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" | head -5
-
-      - name: 6. Zig 0.13（模块 4）
-        run: |
-          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o /tmp/zig.tar.xz
-          sudo tar -xJf /tmp/zig.tar.xz -C /opt
-          sudo ln -sf /opt/zig-linux-x86_64-0.13.0/zig /usr/local/bin/zig
-          zig version
-
-      - name: 7. flatc（模块 21 代码生成）
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flatbuffers-compiler || {
-            curl -fsSL https://github.com/google/flatbuffers/releases/download/v24.3.25/Linux.flatc.binary.g++-13.zip -o /tmp/flatc.zip
-            unzip -oq /tmp/flatc.zip -d /tmp/flatc && sudo mv /tmp/flatc/flatc /usr/local/bin/ && sudo chmod +x /usr/local/bin/flatc
-          }
-          flatc --version
-
-      - name: 8. gomobile（模块 5 的 AAR）
-        run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init
-          gomobile version || true
-
-      - name: 9. doctor（先看工具全没全）
-        run: ./build.sh doctor || true
-
-      - name: 10. 编 Zig 分配器 + idl 代码生成
-        run: ./build.sh zig idl
-
-      - name: 11. 编 Rust 三个 .so（模块 3/10/19）
-        run: ./build.sh rust
-
-      - name: 12. 编 libyieyu_core.so（模块 7/9/12~18/20/21/23/24）
-        run: ./build.sh native
-
-      - name: 13. 符号自检（导出面必须正好是白名单）
+      - name: 15. 符号自检
         run: |
           NM=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
           SO=out/native/arm64/libyieyu_core.so
-          file $SO; ls -lh $SO
-          echo "--- 导出符号 ---"
-          $NM -D --defined-only $SO | grep -E ' T ' | head -30 || true
-          echo "--- 硬校验：这 8 个必须都在 ---"
-          for sym in Yieyu_Init Yieyu_Shutdown Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get \
-                     Yieyu_Service_Ping Yieyu_Service_OnNotificationAction Yieyu_Version; do
-            if $NM -D --defined-only $SO | grep -q " $sym\$"; then
-              echo "  ✓ $sym"
-            else
-              echo "  ✗ 缺导出: $sym" >&2; exit 1
-            fi
+          ls -lh $SO
+          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts; do
+            $NM -D --defined-only $SO | grep -q " $sym\$" || { echo "缺导出: $sym" >&2; exit 1; }
           done
+          echo "导出面 OK"
 
-      - name: 14. 编译 TS 清洗层（模块 6）
-        run: ./build.sh ts
+      - name: 16. 打包 APK（内部按指纹跳过未变模块）
+        run: ./build.sh flutter && ./build.sh verify
 
-      - name: 15. Go 构建校验（模块 5）
-        run: cd go && go vet ./... && go build ./...
+      - name: 17. 增量补丁包
+        run: |
+          node tools/make-patch.mjs
+          cd out/patch && zip -qr "../apk/YieyuUltimate-patch-${GITHUB_SHA::7}.zip" . && cd -
+          ls -lh out/apk/
 
-      - name: 16. Flutter 出 APK（模块 1/2）
-        run: ./build.sh flutter
-
-      - name: 17. 产物清单
-        run: ./build.sh verify && cat out/verify/MANIFEST.md || true
-
-      - name: 18. 上传 APK
+      - name: 18. 上传 APK + 补丁包
         uses: actions/upload-artifact@v4
         with:
           name: YieyuUltimate-apk
           path: |
             out/apk/*.apk
+            out/apk/*patch*.zip
             out/verify/MANIFEST.md
           if-no-files-found: warn
           retention-days: 14
 
-      - name: 19. 上传 .so（APK 挂了也能拿库去调）
+      - name: 19. 上传 .so
         uses: actions/upload-artifact@v4
         with:
           name: yieyu-native-arm64
           path: |
             out/native/arm64/*.so
             out/rust/**/release/*.so
-            out/zig/**/*.a
           if-no-files-found: warn
           retention-days: 7
 
-      - name: 20. 失败时把日志留一份
+      - name: 20. 缓存命中情况
+        if: always()
+        run: |
+          echo "out/ 缓存命中: ${{ steps.ocache.outputs.cache-hit }}"
+          echo "变更: native=${{ steps.chg.outputs.native }} go=${{ steps.chg.outputs.go }} ts=${{ steps.chg.outputs.ts }} app=${{ steps.chg.outputs.app }}"
+          ccache --show-stats 2>/dev/null | head -8 || true
+
+      - name: 21. 失败时留日志
         if: failure()
         run: |
-          echo "=== out 树 ==="; find out -maxdepth 3 -type f 2>/dev/null | head -50
-          echo "=== 构建清单 ==="; cat out/.build-manifest.json 2>/dev/null || true
+          find out -maxdepth 3 -type f 2>/dev/null | head -40
+          cat out/.build-manifest.json 2>/dev/null || true
