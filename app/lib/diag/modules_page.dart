@@ -65,7 +65,8 @@ class _ModulesPageState extends State<ModulesPage> {
 
   Future<void> _runHttpProbe() async {
     // 用一个明确返回 JSON 的公共地址做自检；失败也只影响这一行
-    final rc = JsbClient.instance.httpProbe('http://www.gstatic.com/generate_204');
+    // 国内可达的 204 探测点（gstatic 在部分运营商网络下不可达）
+    final rc = JsbClient.instance.httpProbe('http://connect.rom.miui.com/generate_204');
     final info = JsbClient.instance.lastError();
     if (!mounted) return;
     setState(() {

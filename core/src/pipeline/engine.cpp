@@ -84,9 +84,10 @@ int Engine::Boot(const char* filesDir, const char* abi) {
 
   // ② [20] 打开本地存储（唯一写者），并恢复上次会话
   if (kv_open(yp_data()) != 0) {
-    state_.store(State::kFault);
-    bb_write(YIEYU_LOG_FATAL, "[20] 存储打不开 dir=%s（%s）", yp_data(), kv_last_error());
-    return -2;
+    // ★ 存储打不开也不能熔断：Lua/插件/播放/搜歌都不依赖它，
+    //   熔断会让整机变成"能开界面但不能用"（真机上踩过）。
+    bb_write(YIEYU_LOG_ERROR, "[20] 存储打不开 dir=%s（%s）→ 继续启动，只是不落盘",
+             yp_data(), kv_last_error());
   }
   {
     char buf[512];

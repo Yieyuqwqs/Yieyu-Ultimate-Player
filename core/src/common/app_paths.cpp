@@ -42,11 +42,36 @@ extern "C" int yp_writable(const char* dir) {
   return n == 1 ? 1 : 0;
 }
 
+// Dart 侧的平台通道万一没起来，dataDir 会是空串 —— 那就自己从 /proc/self/cmdline
+// 推出"/data/user/0/<包名>/files"。路径不能因为 UI 层出问题就崩（这是血泪教训）。
+static int derive_data_dir(char* out, size_t cap) {
+  FILE* f = fopen("/proc/self/cmdline", "rb");
+  if (!f) return -1;
+  char name[256] = {0};
+  const size_t n = fread(name, 1, sizeof(name) - 1, f);
+  fclose(f);
+  if (n == 0) return -2;
+  for (size_t i = 0; i < n; ++i) if (name[i] == ':') { name[i] = 0; break; }   // 去掉 :remote 之类的后缀
+  if (!name[0]) return -3;
+  snprintf(out, cap, "/data/user/0/%s/files", name);
+  yp_ensure(out);
+  struct stat st{};
+  if (stat(out, &st) != 0 || !S_ISDIR(st.st_mode)) return -4;
+  return 0;
+}
+
 extern "C" int yp_init(const char* dataDir) {
   if (g_inited) return g_public;
   g_inited = true;
 
-  snprintf(g_data, sizeof(g_data), "%s", (dataDir && *dataDir) ? dataDir : ".");
+  char derived[512] = {0};
+  const char* useDir = dataDir;
+  if (!useDir || !*useDir) {
+    if (derive_data_dir(derived, sizeof(derived)) == 0) useDir = derived;
+    else useDir = ".";
+  }
+  snprintf(g_data, sizeof(g_data), "%s", useDir);
+  yp_ensure(g_data);   // 私有目录必须存在，否则后面 open 全失败
 
   char priv[560];
   snprintf(priv, sizeof(priv), "%s/yieyu", g_data);
