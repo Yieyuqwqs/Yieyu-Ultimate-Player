@@ -32,6 +32,10 @@
 | `Yieyu_Service_Ping` | `int()` | 任意 | Kotlin 用 |
 | `Yieyu_Service_OnNotificationAction` | `void(int)` | 主线程 | Kotlin 用，只转发 |
 | `Yieyu_Version` | `int()` | 任意 | ABI 版本 |
+| `Yieyu_ExportLogs` | `int(char* outDir, size_t cap)` | UI 线程 | 刷盘 + 拷到 `exported/`，返回最终目录 |
+| `Yieyu_LogDir` | `int(char* outDir, size_t cap)` | 任意 | 当前日志目录（可能已降级） |
+| `Yieyu_LogIsPublic` | `int()` | 任意 | 1 = 真写进了 `/storage/emulated/0/yieyu` |
+| `Yieyu_SetTrace` | `void(const char*)` | 任意 | 手动设 trace_id（一般由 `Yieyu_Post` 自动生成） |
 
 > `Yieyu_Free` / `Yieyu_Stats` / `Yieyu_LastError` 已在 `exports.map` 预留，P1 补实现。
 
@@ -144,3 +148,24 @@ CREATE TABLE IF NOT EXISTS track (
 3. 若破坏性：`YIEYU_JSB_ABI` +1，并在 Dart/Rust/Go 侧同步常量
 4. `./build.sh idl` 重新生成四端代码，**提交生成物**
 5. 跑 `./build.sh --dry-run` + CI 的 `contract` job
+
+
+---
+
+## 8. 黑匣子日志记录格式（机器可读，别改顺序）
+
+```
+2026-11-13T08:30:12.345+08:00 | ERROR | trace=1a2b3c4d0007 | module=15 | [15] AAudio open 失败: ErrorInvalidState
+    stack: frames=9 0x7a1c3f0010 0x7a1c3f22a4 ...
+```
+
+| 段 | 规则 |
+|---|---|
+| 时间戳 | 本地时间，毫秒，带时区偏移 |
+| 级别 | 只有 `ERROR` / `FATAL` |
+| trace_id | 由 `Yieyu_Post` 每条命令生成，同一链路共享 |
+| module | 消息开头的 `[NN]` 自动解析（对应 24 模块序号） |
+| 消息 | 必须含关键入参（路径/URL/id），不许含密钥与用户隐私 |
+| stack | FATAL 保证有；ERROR 能取就取（16 帧） |
+
+**轮转**：单文件 5MB → `.1` → `.2` → `.3`，最多 3 个历史，最旧自动删。

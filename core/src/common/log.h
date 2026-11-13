@@ -1,15 +1,13 @@
-// 统一日志。音频线程禁用（模块 15 铁律：AAudio 回调里不许 log）。
+// 日志门面。规范见 docs/BLUEPRINT.md §日志铁律：
+//   · 成功流程一律静默（LOGI / LOGW 都是 no-op）——内存和 I/O 都是成本
+//   · 只有 ERROR / FATAL 才落到黑匣子（异步线程，永不阻塞）
 #pragma once
-#ifdef __ANDROID__
-#include <android/log.h>
-#define YIEYU_TAG "yieyu"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  YIEYU_TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  YIEYU_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, YIEYU_TAG, __VA_ARGS__)
-#else
-#include <cstdio>
-#define LOGI(...) do { std::fprintf(stdout, "[I] " __VA_ARGS__); std::fputc('\n', stdout); } while (0)
-#define LOGW(...) do { std::fprintf(stderr, "[W] " __VA_ARGS__); std::fputc('\n', stderr); } while (0)
-#define LOGE(...) do { std::fprintf(stderr, "[E] " __VA_ARGS__); std::fputc('\n', stderr); } while (0)
-#endif
-#define YIEYU_RT_UNSAFE /* 标记：此函数可能在实时线程被调用 */
+#include "blackbox.h"
+
+#define LOGI(...) ((void)0)                                   // 成功 → 一个字都不打
+#define LOGW(...) ((void)0)                                   // 可恢复 → 也不打
+#define LOGE(...) bb_write(YIEYU_LOG_ERROR, __VA_ARGS__)       // 错误 → 黑匣子
+#define LOGF(...) bb_write(YIEYU_LOG_FATAL, __VA_ARGS__)       // 致命 → 黑匣子 + 堆栈
+
+// 标记：此函数可能在实时线程被调用（实时路径里禁止任何日志调用）
+#define YIEYU_RT_UNSAFE

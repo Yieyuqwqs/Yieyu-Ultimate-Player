@@ -4,6 +4,7 @@ import '../animation/rive_stage.dart';
 import '../gestures/gesture_bridge.dart';
 import '../jsb/jsb_client.dart';
 import '../jsb/jsb_ops.dart';
+import 'settings_page.dart';
 
 /// 【模块 1】首页：列表框架 + 播放条。
 ///
@@ -68,6 +69,15 @@ class _HomePageState extends State<HomePage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Yieyu Ultimate'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              tooltip: '设置',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              ),
+            ),
+          ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(52),
             child: Padding(

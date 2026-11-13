@@ -6,6 +6,9 @@ OUT="${YIEYU_OUT:?需要 YIEYU_OUT}"
 JNI="$HERE/android/app/src/main/jniLibs/arm64-v8a"
 cd "$HERE"
 
+# 1.5) 黑匣子要写 /storage/emulated/0/yieyu → 注入存储权限（幂等）
+node patch_manifest.mjs || true
+
 # 1) 安卓壳子：第一次跑才生成（已存在就跳过，不动我们改过的东西）
 if [[ ! -d android ]]; then
   echo "→ flutter create 生成安卓壳"

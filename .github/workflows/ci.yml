@@ -35,6 +35,16 @@ jobs:
           lines=$(find android -name '*.kt' -exec cat {} + | wc -l)
           echo "Kotlin: $lines / 400"
           test "$lines" -le 400
+      - name: 日志规范（UI 静默 / 成功不记录 / 黑匣子 / 轮转）
+        run: |
+          test -f core/src/common/blackbox.cpp
+          grep -qF '#define LOGI(...) ((void)0)' core/src/common/log.h
+          grep -qF 'LOGE(...) bb_write' core/src/common/log.h
+          grep -qF 'kRotateMax = 5L * 1024 * 1024' core/src/common/blackbox.cpp
+          grep -qF 'kKeepOld   = 3' core/src/common/blackbox.cpp
+          if grep -rnE 'dlopen failed|Failed to load dynamic|降级运行|undefined symbol' app/lib; then
+            echo "UI 出现底层技术报错文本 → 违反铁律 1"; exit 1
+          fi
       - name: Lua 沙箱白名单静态检查
         run: node tools/collect-lua.mjs
       - name: 调度器自检（DAG 无环 + SKIP 不 FAIL）

@@ -70,6 +70,10 @@ typedef _PollNative = IntPtr Function(Pointer<Uint8>, IntPtr);
 typedef _PollDart = int Function(Pointer<Uint8>, int);
 typedef _SnapNative = Int32 Function(Pointer<_CSnapshot>);
 typedef _SnapDart = int Function(Pointer<_CSnapshot>);
+typedef _ExportNative = Int32 Function(Pointer<Utf8>, IntPtr);
+typedef _ExportDart = int Function(Pointer<Utf8>, int);
+typedef _IsPublicNative = Int32 Function();
+typedef _IsPublicDart = int Function();
 typedef _ShutdownNative = Void Function();
 typedef _ShutdownDart = void Function();
 
@@ -156,6 +160,29 @@ class JsbClient {
     if (got > 0) {
       // TODO(P1)：flatc 生成的事件解码器接进来（lib/jsb/jsb_ops.dart）
       // 骨架期只保证字节到了 Dart 侧，不解码也不崩。
+    }
+  }
+
+  /// 导出黑匣子日志。返回最终目录；失败返回 null。
+  /// ★ UI 拿到这个路径只允许显示"已导出"，不许把路径/异常原文怼给用户。
+  String? exportLogs() {
+    final buf = malloc.allocate<Utf8>(600);
+    try {
+      final rc = _export(buf, 600);
+      return rc == 0 ? buf.toDartString() : null;
+    } catch (_) {
+      return null;
+    } finally {
+      malloc.free(buf);
+    }
+  }
+
+  /// 日志是否真的写进了公共目录（/storage/emulated/0/yieyu）
+  bool get logIsPublic {
+    try {
+      return _logIsPublic() == 1;
+    } catch (_) {
+      return false;
     }
   }
 

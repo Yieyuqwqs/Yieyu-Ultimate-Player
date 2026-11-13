@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include "../common/log.h"
 #include "../pipeline/engine.h"
+#include "../common/blackbox.h"
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -33,6 +34,7 @@ void Yieyu_Shutdown(void) {
 int Yieyu_Post(const uint8_t* fbs, size_t len) {
   if (!g_inited.load() || !fbs || len == 0) return -1;
   std::lock_guard<std::mutex> lk(g_postMu);
+  bb_new_trace();                       // 贯穿这一次命令的整条链路
   return yieyu::Engine::Instance().HandleCommand(fbs, len);
 }
 
@@ -53,6 +55,18 @@ void Yieyu_Service_OnNotificationAction(int actionId) {
 }
 
 void Yieyu_Free(void* p) { std::free(p); }
+
+int Yieyu_ExportLogs(char* outDir, size_t cap) {
+  if (!outDir || cap == 0) return -1;
+  return bb_export(outDir, cap);
+}
+int Yieyu_LogDir(char* outDir, size_t cap) {
+  if (!outDir || cap == 0) return -1;
+  std::snprintf(outDir, cap, "%s", bb_dir());
+  return bb_dir()[0] ? 0 : -1;
+}
+int Yieyu_LogIsPublic(void) { return bb_is_public(); }
+void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }
 const char* Yieyu_LastError(void) { return g_lastError; }

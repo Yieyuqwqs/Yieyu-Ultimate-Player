@@ -52,4 +52,11 @@ YIEYU_API int         Yieyu_Version(void);
 YIEYU_API const char* Yieyu_LastError(void);
 YIEYU_API void        Yieyu_Stats(char* out, size_t cap);   // 各模块健康度一行一模块
 
+// ── 黑匣子（模块 0：日志基础设施）────────────────────────────────
+// UI 永远不许展示里面的技术内容；这里只给"导出"和"拿到目录"两个动作。
+YIEYU_API int  Yieyu_ExportLogs(char* outDir, size_t cap);   // 0=成功，outDir 里是最终目录
+YIEYU_API int  Yieyu_LogDir(char* outDir, size_t cap);
+YIEYU_API int  Yieyu_LogIsPublic(void);                      // 1=真的写进了 /storage/emulated/0/yieyu
+YIEYU_API void Yieyu_SetTrace(const char* traceId);
+
 }

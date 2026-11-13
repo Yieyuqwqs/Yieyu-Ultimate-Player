@@ -3,6 +3,7 @@
 #include <cstdio>
 #include "../jsb/jsb.h"
 #include "../common/log.h"
+#include "../common/blackbox.h"
 #include "../sensor/gyro_asensor.h"
 #include "../store/sqlite_kv.h"
 
@@ -17,6 +18,16 @@ Engine::Engine()
 Engine::~Engine() = default;
 
 int Engine::Boot(const char* filesDir, const char* abi) {
+  // ⓪ 黑匣子先起来：之后任何模块出错才有地方落盘。
+  //    首选 /storage/emulated/0/yieyu（用户能直接拿），无权限就降级到 App 私有目录。
+  char fallback[600];
+  std::snprintf(fallback, sizeof(fallback), "%s/yieyu", filesDir ? filesDir : ".");
+  const int pub = bb_init("/storage/emulated/0/yieyu", fallback);
+  if (pub != 0) {
+    // 这条本身就值得记：说明用户没给全盘权限，导出按钮只能拿到私有目录
+    bb_write(YIEYU_LOG_ERROR, "[0] 日志目录降级到私有目录：%s（公共目录不可写）", fallback);
+  }
+
   state_.store(State::kLicensing);
 
   // ① [10] 验签：唯一密钥在这里，Kotlin/Dart/Lua 一律不持有
@@ -24,6 +35,7 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   const bool licensed = true;
   if (!licensed) {
     state_.store(State::kUnlicensed);
+    bb_write(YIEYU_LOG_ERROR, "[10] 验签失败 → 熔断（停解码/清环/置灰），trace=%s", bb_trace());
     LOGW("license fail → 熔断：停解码、清 PCM 环、UI 置灰（不崩进程）");
     return 0;  // 注意：返回 0，UI 仍要起来（退款提示页）
   }
@@ -31,7 +43,7 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   // ② [20] 打开 SQLite（唯一写者，WAL）
   if (sqlite_kv_open(filesDir) != 0) {
     state_.store(State::kFault);
-    LOGE("SQLite 打开失败：%s", filesDir);
+    bb_write(YIEYU_LOG_FATAL, "[20] SQLite 打开失败，dir=%s", filesDir ? filesDir : "?");
     return -2;
   }
   sqlite_kv_load_session();
@@ -47,6 +59,8 @@ int Engine::Boot(const char* filesDir, const char* abi) {
 void Engine::Shutdown() {
   gyro_stop();
   sqlite_kv_close();
+  bb_flush();
+  bb_shutdown();
   state_.store(State::kIdle);
 }
 
