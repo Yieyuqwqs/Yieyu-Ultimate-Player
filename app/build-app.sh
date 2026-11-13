@@ -70,7 +70,7 @@ fi
 
 # ── 8. 资源 ─────────────────────────────────────────────────────────
 mkdir -p assets/plugins
-cp -v "$OUT"/wasm/*.wasm assets/plugins/ 2>/dev/null || echo "（暂无 wasm 插件）"
+cp -v "$OUT"/plugins/*.ypfx assets/plugins/ 2>/dev/null || echo "（暂无插件：assets/plugins 里已有随包的那一份）"
 
 # ── 9. 出包 ─────────────────────────────────────────────────────────
 flutter pub get >/dev/null

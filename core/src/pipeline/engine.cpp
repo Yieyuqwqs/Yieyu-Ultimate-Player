@@ -17,7 +17,7 @@
 #include "../audio/aaudio_sink.h"
 #include "../script/lua_sandbox.h"
 #include "../ai/vocals.h"
-#include "../wasm/wasm_host.h"
+#include "../plugin/plugin_host.h"
 #include "player.h"
 
 // [5]/[9] 搜歌出口：Go 编的 libyieyu_fetch.so（与 Lua 的 http_* 是同一份）
@@ -161,10 +161,10 @@ int Engine::Boot(const char* filesDir, const char* abi) {
     char pdir[900];
     std::snprintf(pdir, sizeof(pdir), "%s/plugins", yp_home());
     (void)yp_ensure(pdir);
-    if (wasm_host_init(pdir) != 0) {
+    if (plugin_host_init(pdir) != 0) {
       // 没有插件是常态：只在真有文件却载入失败时才记黑盒
-      if (wasm_plugin_count() > 0) {
-        bb_write(YIEYU_LOG_ERROR, "[8] 插件载入失败：%s（目录 %s）", wasm_host_error(), pdir);
+      if (plugin_count() > 0) {
+        bb_write(YIEYU_LOG_ERROR, "[8] 插件载入失败：%s（目录 %s）", plugin_error(), pdir);
       }
     }
   }
@@ -225,7 +225,7 @@ void Engine::Shutdown() {
 #endif
   kv_close();
   lua_sandbox_shutdown();
-  wasm_host_shutdown();
+  plugin_shutdown();
   bb_flush();
   bb_shutdown();
   state_.store(State::kIdle);
@@ -247,6 +247,7 @@ void Engine::PlayerError(char* out, size_t cap) const { Player::Instance().LastE
 void Engine::SetDsp(bool on) { dspOn_.store(on ? 1 : 0); Player::Instance().SetDsp(on); }
 void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
 void Engine::SetRate(int hz) { Player::Instance().SetTargetRate(hz); }
+void Engine::SetPlugin(bool on) { Player::Instance().SetPlugin(on); }
 
 // ── [18] 离线人声消除（只在后台线程跑，绝不进音频线程）────────────────
 int Engine::KaraokeStart(const char* srcWav, const char* dstWav) {
@@ -447,7 +448,7 @@ void Engine::Stats(char* out, size_t cap) {
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
                 (long long)p.DecodedChunks(), (int)lic_.load(), (int)integ_.load(),
                 kv_count(), (int)storeEntries_.load(), gyro_is_available(),
-                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate(), wasm_plugin_ready());
+                p.IsDsd() ? 1 : 0, p.IsResampling() ? 1 : 0, p.TargetRate(), plugin_ready());
 }
 
 }  // namespace yieyu

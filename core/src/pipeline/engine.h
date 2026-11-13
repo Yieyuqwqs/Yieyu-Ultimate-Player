@@ -40,7 +40,7 @@ class Engine {
   void SetEqGain(int band, float db);
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
   void SetRate(int hz);                 // [14] 输出采样率（0=自动）
-  void SetPlugin(bool on) { Player::Instance().SetPlugin(on); }   // [8] wasm 音效插件
+  void SetPlugin(bool on);              // [8] wasm 音效插件（实现在 engine.cpp，头文件里不碰 Player）
 
   // [18] 离线人声消除：异步受理（整曲 STFT，几秒到几十秒）
   //   KaraokeStatus: -2=空闲 -1=运行中 0=完成 <0=失败码

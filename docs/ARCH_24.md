@@ -13,8 +13,8 @@
 2. **音频线程零 JNI、零 Dart、零分配**。`AAudio` 回调里只允许：读环、算、写环。
 3. **跨语言只走两条路**：控制面 `JSB (FlatBuffers)`，数据面 `共享内存环 + FlatBuffers 头`。
    不许出现"用 JSON 传 PCM"这种事故。
-4. **同一个 SQLite 文件只允许一个写者**。写者 = M20 (C++)；M19 (Rust SQLx) 只读 + 写元数据表，
-   且必须 `journal_mode=WAL` + `busy_timeout=5000`，违反即锁库。
+4. **同一个存储文件只允许一个写者**。写者 = M20（自研追加日志 KV）；M19（Rust/tokio 只读库）
+   只读同一个文件，从不写。格式：`[magic "YKV1" u32][klen u16][vlen u32][crc u32][key][val]`。
 5. **卡密/验签只有一份密钥**，在 M10 (ring) 里；Kotlin、Dart、Lua、Wasm 一律不许持有。
 6. **第三方脚本/插件运行在 M7 或 M8 的沙箱里**，不许碰文件系统全盘、不许 `dlopen`、不许起线程池。
 7. **M22 Kotlin 总量封顶 400 行**（监控点：`wc -l android/**/*.kt`）。超了就说明有业务漏进系统层。
@@ -31,10 +31,10 @@
 | 2 | C++ | Rive Runtime | 微操矢量动画：31 段 EQ 曲线跳动、播放键呼吸灯 | `app/lib/animation/` → `rive_flutter`(内含 C++ runtime) | Flutter 插件 | `assets/rive/*.riv` |
 | 3 | Rust | Tokio | UI 层高并发手势捕捉：防误触、长按震动判定 | `rust/gesture-tokio/` | `cargo build` | `libyieyu_gesture.so` |
 | 4 | Zig | Zig CC | 跨平台底层编译 + 内存分配器 | `zig/` | `zig build` | `libyieyu_mem.a` |
-| 5 | Go | Goroutine | 业务层高并发搜歌：同时打网易/QQ/酷狗 | `go/` | `gomobile bind` | `search.aar` |
+| 5 | Go | net/http + TLS1.3 | 业务层搜歌与取直链 | `go/fetch/` | `go build -buildmode=c-shared` | `libyieyu_fetch.so` |
 | 6 | TypeScript | Zod（构建期） | JSON 解析与数据清洗 + 生成 Dart 模型 | `ts/` | `tsc` + esbuild + gen-schema | `out/ts/cleaner.mjs` + `app/lib/model/song.dart` |
 | 7 | Lua | LuaJIT | 第三方音源脚本沙箱（落雪源） | `core/src/script/` + `lua/sources/` | CMake 静态链 | `libyieyu_core.so` 内 |
-| 8 | WebAssembly | 自研 MVP 解释器 | 跨端热更新插件：下发的音效包 | `core/src/wasm/` + `tools/mkwasm.mjs` | CMake + node 生成器 | `assets/plugins/*.wasm` |
+| 8 | 自有字节码（原表：WebAssembly） | 自研 YPFX 解释器 | 跨端热更新插件：下发的音效包 | `core/src/plugin/` + `tools/mkplugin.mjs` | CMake + node 生成器 | `assets/plugins/*.ypfx` |
 | 9 | C | 自研 socket HTTP/1.1 | 最底层 TCP/Socket：拉音频流 | `core/src/net/stream_http.c` | CMake | `libyieyu_core.so` 内 |
 | 10 | Rust | ring | 密码学级验签：卡密、防抓包 | `rust/license-ring/` | `cargo build` | `libyieyu_license.so` |
 | 11 | 自研 | 符号重命名 + strip + sha256 | 机器码混淆与防篡改 | `tools/obfuscate.mjs` + `core/src/common/integrity.cpp` | 链接后处理 | 混淆后的 `.so` + `assets/integrity/` |
@@ -123,8 +123,9 @@ Yieyu-Ultimate-Player/
 │   │   │   └── flatbuf_codec.cpp   【模块 21】
 │   │   ├── script/
 │   │   │   └── lua_sandbox.cpp     【模块 7】
-│   │   ├── wasm/
-│   │   │   └── host_wasmedge.cpp   【模块 8】
+│   │   ├── plugin/
+│   │   │   ├── abi.h                【模块 8】自有字节码规格
+│   │   │   └── plugin_host.cpp      【模块 8】解释器
 │   │   └── ai/
 │   │       └── onnx_vocals.cpp     【模块 18】
 │   └── tests/
@@ -167,11 +168,7 @@ Yieyu-Ultimate-Player/
 │   ├── README.md                   沙箱 API 白名单
 │   └── sources/example_source.lua
 │
-├── wasm/                           ── 模块 8 ──
-│   ├── README.md
-│   └── fx_tremolo/                 示例热更新音效包
-│       ├── Cargo.toml
-│       └── src/lib.rs
+├── tools/mkplugin.mjs              ── 模块 8 的插件生成器（输出 YPFX 字节码）──
 │
 ├── zig/                            ── 模块 4 ──
 │   ├── build.zig
@@ -197,7 +194,7 @@ Yieyu-Ultimate-Player/
 │               └── PlaybackService.kt
 │
 └── third_party/                     ── 只放"怎么拿"，不放代码 ──
-    └── README.md                   FFmpeg/JUCE/Eigen/SQLite/ORT/WasmEdge/LuaJIT 版本与许可证
+    └── README.md                   为什么这里是空的（零第三方二进制）
 ```
 
 ---
@@ -210,10 +207,10 @@ Yieyu-Ultimate-Player/
 | `libyieyu_gesture.so` | M3 cargo | `out/rust/arm64/` | Flutter (`dart:ffi`) |
 | `libyieyu_license.so` | M10 cargo | `out/rust/arm64/` | core (`dlopen` 一次，句柄常驻) |
 | `libyieyu_store.so` | M19 cargo | `out/rust/arm64/` | core |
-| `search.aar` | M5 gomobile | `out/go/` | Android (极薄 Kotlin 之外直接 JNI? 否 → JSB) |
-| `dist/cleaner.mjs` | M6 tsc | `out/ts/` | M8 WasmEdge-JS guest 或 Go 侧兜底 |
+| `libyieyu_fetch.so` | M5/M9 Go | `out/go/` | core（搜歌 + 脚本 HTTP + 取直链） |
+| `cleaner.mjs` + `song.dart` | M6 tsc/esbuild + gen-schema | `out/ts/` + `app/lib/model/` | Flutter（生成期模型）/ 清洗回归 |
 | `libyieyu_core.so` | core CMake | `out/native/arm64/` | Flutter + Kotlin Service |
-| `*.wasm` | `wasm/*` cargo | `assets/plugins/` | M8 宿主 |
+| `*.ypfx` | `tools/mkplugin.mjs` | `app/assets/plugins/` | M8 宿主（自研字节码） |
 | `platform-service.aar` | M22 gradle | Gradle 本地模块 | app |
 
 > **链接顺序铁律**：`core` 是唯一的"汇聚点"。Rust/Zig/FFmpeg 全部被 core 静态或动态链接，
@@ -225,14 +222,14 @@ Yieyu-Ultimate-Player/
 
 | 项 | 现实约束 | 对策 |
 |---|---|---|
-| **M11 Obfuscator-LLVM** | NDK r23 起弃用 GCC 前端；O-LLVM 是 LLVM 分支，无法直接套 NDK r27 的 clang | 走 LLVM Pass Plugin（`-fpass-plugin`）自研混淆 pass，或自建 O-LLVM + 自编 libc++；**P4 再做** |
+| **M11 混淆与防篡改** | O-LLVM 需要自建 LLVM 分支，NDK r23 起 GCC 前端已废弃 | 链接后处理：符号重命名 + strip + sha256 自校验（构建期生成摘要，启动时比对） |
 | **M12 NEON 手写汇编** | 手写比对必须**常数时间**，且要防编译器重排 | 汇编里只用寄存器 + `cbz` 分支，禁止早退；上机做 dudect 泄漏测试 |
 | **M18 Python + ONNX** | 手机上跑 CPython 体积 +120MB 且 GIL 拖累实时性 | **Python 只做训练/导出**；运行时走 `onnxruntime` C++ API（`core/src/ai/onnx_vocals.cpp`）；真要 Py 就 Chaquopy 且仅臂 64 |
-| **M8 WasmEdge** | Android 上 AOT 受限（JIT 被 W^X 拦），需关 JIT 走 interpreter 或预编译 AOT | 插件只做**参数级音效**（32~64 采样一块），interpreter 够用；预编译 AOT 放首启解压 |
+| **M8 wasm 宿主** | 第三方引擎体积与 AOT 限制都不划算 | 自研 YPFX 解释器，只覆盖插件所需指令子集；guest 由 `tools/mkplugin.mjs` 生成（无循环无分支） |
 | **M7 LuaJIT** | 进程内沙箱死循环只能软掐（指令计数 hook） | 双模：默认进程内 hook，`--hard-kill` 模式走独立进程，超时 `SIGKILL` |
 | **M4 Zig CC** | 用它替 NDK clang 编整个 NDK 生态会踩 STL/ABI 坑 | 只编"零依赖"模块（分配器/算法核），**不碰** libc++ 边界 |
 | **M3 Tokio 抓手势** | 触摸事件源头在 Flutter（Impeller 之前就分发了） | 事件经 `JSB` 单向下行给 Tokio 任务组，判定结果走 `gesture` so 回 Dart；**Tokio 不碰 UI** |
-| **M19+M20 双写 SQLite** | 双写者必锁库 | WAL + 写者唯一（M20）；M19 只读 + `PRAGMA query_only` |
+| **M19+M20 双写存储** | 两个写者必抢文件 | 写者唯一（M20，带互斥）；M19 只读同一文件，从不写 |
 | **M1 Flutter 体积** | 首包 +18MB，冷启 +300ms | 分 ABI 出包（arm64 only 起步，和 Core-Player 一致） |
 
 ---
@@ -245,6 +242,6 @@ Yieyu-Ultimate-Player/
 | NDK | r27c | `ANDROID_NDK` |
 | minSdk / targetSdk | 26 / 34 | **26 是 AAudio 的硬门槛** |
 | Rust | stable（≥1.81） | `edition = 2021`；sqlx 的 idna 链路要 1.81+ |
-| Go | 1.22 | gomobile + gomobile bind |
+| Go | 1.22 | `-buildmode=c-shared` 出 C ABI（不再用 gomobile） |
 | Zig | 0.13.0 | `-target aarch64-linux-android` |
 | C++ | C++20 | `-fno-exceptions -fno-rtti`（音频核） |

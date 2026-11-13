@@ -80,7 +80,7 @@ class _BootstrapperState extends State<_Bootstrapper> {
   Future<void> _installBuiltinPlugins() async {
     try {
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final keys = manifest.listAssets().where((k) => k.startsWith('assets/plugins/') && k.endsWith('.wasm'));
+      final keys = manifest.listAssets().where((k) => k.startsWith('assets/plugins/') && k.endsWith('.ypfx'));
       for (final key in keys) {
         final data = await rootBundle.load(key);
         final name = key.split('/').last;

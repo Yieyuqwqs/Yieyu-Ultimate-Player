@@ -193,6 +193,10 @@ export function referenceTremolo(samples, step, modDepth) {
 const bytes = build()
 fs.mkdirSync(path.dirname(OUT), { recursive: true })
 fs.writeFileSync(OUT, bytes)
+// 同时落一份到 out/wasm（构建产物目录约定，打包脚本按它找）
+const OUTDIR = path.join(ROOT, process.env.OUT || 'out', 'wasm')
+fs.mkdirSync(OUTDIR, { recursive: true })
+fs.writeFileSync(path.join(OUTDIR, 'fx_tremolo.wasm'), bytes)
 console.log(`  → ${path.relative(ROOT, OUT)}（${bytes.length} 字节）`)
 
 if (process.argv.includes('--check')) {

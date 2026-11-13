@@ -31,7 +31,7 @@
 | 5 | 首页搜索 → `Yieyu_Search` → Go `yieyu_music_search`；点歌 → `yieyu://song` → `yieyu_music_url` |
 | 6 | 构建期 `tools/gen-schema.mjs`：Zod schema → `app/lib/model/song.dart`（UI 直接用） |
 | 7 | 脚本导入/随包 `wy.lua` → `lua_sandbox` → `get_music_url` → 播放 |
-| 8 | `assets/plugins/*.wasm` → 自研解释器 → 解码线程 DSP 链（设置里可关） |
+| 8 | `assets/plugins/*.ypfx` → 自研解释器 → 解码线程 DSP 链（设置里可关） |
 | 9 | `http://` 直链 → `yieyu_http_download` → 私有缓存 → 解码器；自检页有 `Yieyu_HttpProbe` |
 | 10 | `Engine::Boot` dlopen `libyieyu_license.so` → `yieyu_license_has_pubkey` |
 | 11 | `tools/obfuscate.mjs` 链接后重命名+strip+sha256 → `assets/integrity/` → 启动 `Yieyu_IntegrityCheck` |
@@ -84,5 +84,6 @@ node vocals_model.js     # 模块18：FFT 对 DFT + 中置抑制效果
 
 - 只出 arm64；`https` 不在模块 9 做（NDK 无 TLS，走系统解码器或 Go）；
 - 模块 18 是"离线整曲处理"，实时人声消除需要 NN 模型，不在本轮范围；
-- 模块 8 的解释器只覆盖自研插件生成器产出的指令子集（够跑音效插件，不是通用 wasm 运行时）；
+- 模块 8 用的是**自研字节码**（不是 WebAssembly）：指令 10 条、无跳转、失败自动关开关；
+  要跑通用 wasm 需要完整解释器，不在本轮范围；
 - 模块 11 是"符号收敛 + 完整性自校验"，不是 OLLVM 的控制流混淆。

@@ -30,7 +30,7 @@ Flutter ─ Rust(Tokio, ring) + Zig + Go(TLS) + TypeScript(构建期) + LuaJIT �
 | 5 | Go | net/http + TLS1.3 | 并发搜歌 + 取直链 | `go/fetch` |
 | 6 | TypeScript | Zod（构建期） | JSON 清洗 + 生成 Dart 歌曲模型 | `ts/`、`tools/gen-schema.mjs` |
 | 7 | Lua (LuaJIT) | 沙箱 + 指令计数 | 第三方音源脚本（随包 `wy.lua`） | `core/src/script`、`lua/sources` |
-| 8 | WebAssembly | 自研 MVP 解释器 | 热更新音效插件（不下发 APK） | `core/src/wasm`、`tools/mkwasm.mjs` |
+| 8 | WebAssembly | 自研 YPFX 解释器 | 热更新音效插件（不下发 APK） | `core/src/plugin`、`tools/mkplugin.mjs` |
 | 9 | C | BSD socket | HTTP/1.1 取流（chunked/302/大小上限） | `core/src/net/stream_http.c` |
 | 10 | Rust + ring | Ed25519 | 卡密验签（唯一密钥点） | `rust/license-ring` |
 | 11 | 自研防篡改 | 符号重命名 + strip + sha256 | 机器码收紧与完整性自校验 | `tools/obfuscate.mjs`、`core/src/common/integrity.cpp` |

@@ -35,6 +35,7 @@ class Player {
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
   // [14] 输出采样率：0=自动（PCM 跟源、DSD 固定 192k），或 48000/96000/192000 强制升频
   void SetTargetRate(int hz);
+  void SetPlugin(bool on);              // [8] 插件处理开关（下一块解码生效）
   int  TargetRate() const { return targetRate_.load(std::memory_order_relaxed); }
   // 本曲是否走了 [16] DSD 解码（诊断面板看）
   bool IsDsd() const { return dsd_.load(std::memory_order_relaxed); }

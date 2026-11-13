@@ -91,7 +91,7 @@ C++ [24] → JSB 上行 ready{session, caps{abi, 192k?, dsd?, ai?}} → [1] 建�
 用户输入关键词（[1] Dart）
    │ JSB 下行  search{kw, sources[]}
    ▼
-[24] JSB → 转 FlatBuffers → JNI? 否，Go 侧走 libyieyu_search (gomobile) 的 C 入口
+[24] JSB → 40 字节帧头 → 否，不走 JNI；Go 侧走 yieyu_music_search 的 C 入口（libyieyu_fetch.so）
    ▼
 [5] Go：1 个 goroutine 组/源站，ctx 800ms 超时，先到先出
    ├─ netease provider ─┐

@@ -169,3 +169,31 @@ CREATE TABLE IF NOT EXISTS track (
 | stack | FATAL 保证有；ERROR 能取就取（16 帧） |
 
 **轮转**：单文件 5MB → `.1` → `.2` → `.3`，最多 3 个历史，最旧自动删。
+
+
+## 4. 控制面 / 数据面统一帧头（40 字节，模块 21）
+
+| 偏移 | 类型 | 字段 | 说明 |
+|---|---|---|---|
+| 0 | char[4] | magic | 命令 `YJSC` / 事件 `YFRM`（= 两个 fbs 的 file_identifier） |
+| 4 | u16 | version | 必须 = `YIEYU_JSB_ABI`（现在 1），不等就拒收 |
+| 6 | u16 | channels | 命令=op（见 `idl/jsb.fbs` enum Op）/ 事件=类型（'S'=搜索结果 'E'=错误） |
+| 8 | u32 | sampleRate | 数据面才有意义 |
+| 12 | u32 | frames | **载荷字节数**（唯一的长度字段，不许出现第二个） |
+| 16 | u64 | seq | 单调递增 |
+| 24 | u64 | ptsUs | 数据面时间戳 |
+| 32 | u64 | checksum | 调试期用，release 置 0 |
+
+载荷从第 40 字节开始。CI 里 `node tools/verify-idl.mjs` 会拿 `idl/frames.fbs` 反查这张表的
+偏移与枚举顺序，对不上直接红。
+
+## 5. 本地存储记录格式（模块 20 写、19 读）
+
+```
+[magic "YKV1" u32][klen u16][vlen u32][crc32 u32][key klen][val vlen]
+```
+
+- `vlen = 0` 是删除墓碑；
+- `crc32` = key 与 val 依次 update 的累计 CRC（IEEE 多项式）；
+- 打开时逐条校验，遇到半条记录（断电残留）就截断到最后一条完整记录；
+- 文件超过 8MB 自动压实（活记录搬到 tmp 再 rename）。

@@ -70,9 +70,9 @@ const STEPS = [
   { id: 'schema', deps: ['ts'], bin: 'node', desc: '模块6 TS schema → Dart 模型 + 清洗回归',
     cmd: () => ['node', 'tools/gen-schema.mjs'], env: () => ({ ...process.env, OUT }), out: ['schema'], inputs: ['ts', 'tools/gen-schema.mjs'] },
 
-  { id: 'wasm', deps: ['doctor'], bin: 'node', desc: '模块8 自研插件生成器（手写 wasm）',
-    cmd: () => ['node', 'tools/mkwasm.mjs', '--check'],
-    out: ['wasm'], inputs: ['tools/mkwasm.mjs'] },
+  { id: 'wasm', deps: ['doctor'], bin: 'node', desc: '模块8 自研插件（YPFX 字节码）',
+    cmd: () => ['node', 'tools/mkplugin.mjs', '--check'],
+    out: ['plugins'], inputs: ['tools/mkplugin.mjs'] },
 
   { id: 'lua', deps: ['doctor'], bin: 'node', desc: '模块7 音源脚本资源收集',
     cmd: () => ['node', 'tools/collect-lua.mjs'], out: ['lua'], inputs: ['lua'] },

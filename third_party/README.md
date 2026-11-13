@@ -13,7 +13,7 @@ ONNX Runtime 全部不用。需要的功能都在树内自己实现，理由只�
 | SQLx | 自研 tokio 只读库（同一文件格式） | `rust/store-read/` |
 | Eigen | 自研多相 FIR（DSD 抽取 + 重采样） | `core/src/audio/resampler.cpp`、`dsd.cpp` |
 | SpeexDSP | 同上（有理数比例多相重采样，窗函数 sinc） | `core/src/audio/resampler.cpp` |
-| WasmEdge | 自研 wasm MVP 解释器 + 自研插件生成器 | `core/src/wasm/wasm_interp.cpp`、`tools/mkwasm.mjs` |
+| WasmEdge | 自研 YPFX 字节码解释器 + 自研插件生成器 | `core/src/plugin/wasm_interp.cpp`、`tools/mkplugin.mjs` |
 | ONNX Runtime | 自研离线人声消除（STFT 中置抑制），核系数由 Python 生成 | `core/src/ai/vocals.cpp`、`python/vocal_remover/design.py` |
 | Obfuscator-LLVM | 链接后处理：符号重命名 + strip + 自校验摘要 | `tools/obfuscate.mjs`、`core/src/common/integrity.cpp` |
 

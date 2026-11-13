@@ -1,3 +1,6 @@
+> **本工程零第三方二进制**：不需要 FFmpeg / libcurl / SQLite / Eigen / SpeexDSP / WasmEdge / ONNX Runtime。
+> 缺的能力都在树内自研（清单见 `third_party/README.md`）。
+
 # 跨语言构建总控方案（CMake + Cargo + Go Modules + Zig + tsc + Gradle）
 
 > 唯一入口：`./build.sh [target...]`。CI 与本地**同一条命令**，不许有第二套脚本。
@@ -8,7 +11,7 @@
 ## 0. 一句话总控
 
 ```
-build.sh  →  tools/orchestrate.mjs  →  { zig | asm↦cmake | cargo | gomobile | tsc | wasm | flatc | gradle | flutter }
+build.sh  →  tools/orchestrate.mjs  →  { zig | cargo | go(c-shared) | flatc+契约校验 | tsc+schema | mkwasm | cmake | gradle | 混淆 | flutter }
                                   →  $OUT/{zig,rust,native,go,ts,wasm,gen,apk}/
 ```
 
@@ -27,7 +30,7 @@ build.sh  →  tools/orchestrate.mjs  →  { zig | asm↦cmake | cargo | gomobil
         ▼           ▼       ▼        ▼           ▼          ▼         ▼
    ┌────────┐ ┌─────────┐┌──────┐┌───────┐┌──────────┐┌────────┐┌─────────┐
    │1 idl   │ │2 zig    ││3 rust││4 go   ││5 ts      ││6 wasm  ││7 lua    │
-   │ flatc  │ │  mem.a  ││ 3 个 ││ search││ cleaner  ││ *.wasm ││ 资源拷贝 │
+   │ flatc  │ │  mem.a  ││ 3 个 ││ search││ cleaner  ││ *.ypfx ││ 资源拷贝 │
    │ codegen│ │         ││ .so  ││ .aar  ││ .mjs     ││        ││         │
    └───┬────┘ └────┬────┘└──┬───┘└───┬───┘└────┬─────┘└───┬────┘└────┬────┘
        │           │        │        │         │          │          │
@@ -98,7 +101,8 @@ cargo build --manifest-path rust/Cargo.toml --release \
 ```bash
 cd go && GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
   CC=$NDK/.../aarch64-linux-android26-clang go build ./...
-gomobile bind -target=android/arm64 -androidapi 26 -o $OUT/go/search.aar ./bind
+go build -buildmode=c-shared -ldflags="-s -w -extldflags=-Wl,-soname,libyieyu_fetch.so" \
+  -o "$OUT/go/libyieyu_fetch.so" ./fetch     # 不再出 AAR：Android 侧没有 Java 调用点
 ```
 
 - **只绑 `bind` 一层**（面积极小），业务包不直接暴露给 Kotlin/Dart。

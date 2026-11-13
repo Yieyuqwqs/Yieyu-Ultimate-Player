@@ -10,7 +10,7 @@
 #include "../common/app_paths.h"
 #include "../script/lua_sandbox.h"
 #include "../net/stream_http.h"
-#include "../wasm/wasm_host.h"
+#include "../plugin/plugin_host.h"
 #include <cstdlib>
 #include <sys/stat.h>
 #include <atomic>
@@ -126,7 +126,7 @@ void Yieyu_SetPlugin(int on) { if (g_inited.load()) yieyu::Engine::Instance().Se
 int Yieyu_ImportPlugin(const char* name, const uint8_t* data, int len) {
   if (!name || !data || len <= 0) return -1;
   const size_t nlen = std::strlen(name);
-  if (nlen < 6 || std::strcmp(name + nlen - 5, ".wasm") != 0) return -2;
+  if (nlen < 7 || std::strcmp(name + nlen - 5, ".ypfx") != 0) return -2;
   if (len > 1024 * 1024) return -3;
   char pdir[900];
   std::snprintf(pdir, sizeof(pdir), "%s/plugins", yp_home());
@@ -138,8 +138,8 @@ int Yieyu_ImportPlugin(const char* name, const uint8_t* data, int len) {
   const size_t wrote = std::fwrite(data, 1, (size_t)len, f);
   std::fclose(f);
   if (wrote != (size_t)len) return -5;
-  const int rc = wasm_host_reload(pdir);
-  if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[8] 插件导入后载入失败：%s", wasm_host_error());
+  const int rc = plugin_host_reload(pdir);
+  if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[8] 插件导入后载入失败：%s", plugin_error());
   return rc == 0 ? 0 : -6;
 }
 
