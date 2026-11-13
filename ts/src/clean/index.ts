@@ -8,7 +8,7 @@
  * 设计取向：**永不抛异常**。任何一条脏数据只是一个"坏样本"，丢掉继续。
  * 因为这条链的出口是 UI 列表，一个源站挂掉不许让整个搜索失败。
  */
-import { SearchPayloadSchema, SongSchema, type Song } from '../schema/song.js'
+import { validateSong, validateSearchPayload, type Song } from '../schema/song.js'
 
 const MAX_SONGS = 500
 
@@ -84,9 +84,9 @@ export function cleanSourceTrace(trace: { source: string; body: string }): Song[
   for (const raw of list) {
     const cand = toCandidate(raw, trace.source)
     if (!cand) continue
-    const res = SongSchema.safeParse(cand)
-    if (!res.success) continue // 坏样本静默丢弃，逐条计数在 P1 加 metrics
-    out.push(res.data)
+    const clean = validateSong(cand)   // 手写校验（零依赖）
+    if (!clean) continue               // 坏样本静默丢弃
+    out.push(clean)
     if (out.length >= MAX_SONGS) break
   }
   return out
@@ -108,10 +108,10 @@ export function dedupe(songs: Song[]): Song[] {
 
 /** 模块 5 的整体交接格式 */
 export function cleanSearchPayload(json: string): Song[] {
-  const parsed = SearchPayloadSchema.safeParse(tryParse(json))
-  if (!parsed.success) return []
+  const traces = validateSearchPayload(tryParse(json))
+  if (!traces.length) return []
   const all: Song[] = []
-  for (const t of parsed.data.traces) all.push(...cleanSourceTrace(t))
+  for (const t of traces) all.push(...cleanSourceTrace(t))
   return dedupe(all).slice(0, MAX_SONGS)
 }
 

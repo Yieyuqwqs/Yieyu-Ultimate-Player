@@ -1,73 +1,94 @@
 /**
- * 【模块 6】Zod · 唯一真源
+ * 【模块6】歌曲结构定义（**零依赖**：不引 zod，校验代码手写）。
  *
- * 所有跨语言/跨源站的歌曲结构只在这里定义一次：
- *   - TS 侧用 z.infer 拿类型（不许手写第二份 interface）
- *   - Go / Rust / C++ 侧的对应结构由 idl/*.fbs 承载，字段名必须与这里一一对应
+ * 为什么把 zod 拔了：为了一个字段校验引一个运行时库，是"外行的依赖"。这里用
+ * 30 行手写校验替代：类型不对/越界/缺失就直接丢样本，语义与原来一致。
  *
- * 铁律：源站返回的东西**永远不可信**。任何字段缺失、类型错、越界，都必须在边界被丢掉，
- * 不许把脏数据带进状态层。
+ * 字段清单的唯一真源在 ./fields.ts（纯数据，构建期生成 Dart 模型用）。
  */
-import { z } from 'zod'
+export { SONG_FIELDS } from './fields.js'
 
-export const SourceSchema = z.enum(['netease', 'qq', 'kugou', 'local'])
+export type Source = 'netease' | 'qq' | 'kugou' | 'local'
+export type Quality = 'unknown' | '128k' | '320k' | 'flac' | 'hires' | 'dsd'
 
-/** 时长：0 ~ 24h，允许 0（未知），不允许负数/NaN */
-const DurationMs = z.number().int().min(0).max(24 * 3600 * 1000)
+export interface Song {
+  id: string
+  source: Source
+  title: string
+  artist: string
+  album: string
+  durationMs: number
+  bitrate: number
+  quality: Quality
+  coverUrl?: string
+  url?: string
+  fingerprint: string
+}
 
-export const SongSchema = z.object({
-  id: z.string().min(1).max(128),
-  source: SourceSchema,
-  title: z.string().min(1).max(512),
-  artist: z.string().max(512).default(''),
-  album: z.string().max(512).default(''),
-  durationMs: DurationMs.default(0),
-  /** 码率 bps；未知为 0 */
-  bitrate: z.number().int().min(0).max(20_000_000).default(0),
-  /** 音质标签，决定走不走模块 14（重采样）/16（DSD） */
-  quality: z.enum(['unknown', '128k', '320k', 'flac', 'hires', 'dsd']).default('unknown'),
-  coverUrl: z.string().url().optional(),
-  /** 直链（可能过期，落库时只存 1h） */
-  url: z.string().url().optional(),
-  /** 源站原始字段的指纹，用于去重 */
-  fingerprint: z.string().max(128).default(''),
-})
+export interface SourceTrace {
+  source: string
+  body: string
+  elapsedMs?: number
+}
 
-export type Song = z.infer<typeof SongSchema>
+const SOURCES: Source[] = ['netease', 'qq', 'kugou', 'local']
+const QUALITIES: Quality[] = ['unknown', '128k', '320k', 'flac', 'hires', 'dsd']
 
-/**
- * 字段清单：**跨语言生成的唯一来源**。tools/gen-schema.mjs 读它生成
- *   · app/lib/model/song.dart（Dart 侧模型）
- * 改字段只改上面那个 Zod schema + 这里，两边不会再各写一份。
- * 每项：[Dart 名, JSON 键, 类型]
- */
-export const SONG_FIELDS: ReadonlyArray<readonly [string, string, 'string' | 'int']> = [
-  ['id', 'id', 'string'],
-  ['source', 'source', 'string'],
-  ['title', 'name', 'string'],      // 源站字段叫 name，网络层统一成 title
-  ['artist', 'artist', 'string'],
-  ['album', 'album', 'string'],
-  ['durationMs', 'durationMs', 'int'],
-  ['quality', 'quality', 'string'],
-  ['mid', 'mid', 'string'],
-]
+const str = (v: unknown, max: number, fallback = ''): string =>
+  typeof v === 'string' ? v.slice(0, max) : v == null ? fallback : String(v).slice(0, max)
 
-export const SearchPayloadSchema = z.object({
-  traces: z
-    .array(
-      z.object({
-        source: z.string(),
-        elapsedMs: z.number().int().min(0),
-        body: z.string(),
-      }),
-    )
-    .max(16),
-})
-export type SearchPayload = z.infer<typeof SearchPayloadSchema>
+const int = (v: unknown, min: number, max: number): number => {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return min
+  return Math.max(min, Math.min(max, Math.round(n)))
+}
 
-/** 一个源站的原始 JSON → 候选 Song[]（各源站字段天差地别，全部在这里收敛） */
-export const SourceAdapter = z.object({
-  source: SourceSchema,
-  /** 把该源站的 body 洗成 Song[]；洗不动就返回空数组，绝不抛到上层 */
-  adapt: z.function().args(z.string()).returns(z.array(SongSchema)),
-})
+const url = (v: unknown): string | undefined => {
+  if (typeof v !== 'string' || !v) return undefined
+  if (v.startsWith('//')) return 'https:' + v
+  if (!/^https?:\/\//.test(v)) return undefined
+  return v.slice(0, 2048)
+}
+
+/** 脏记录 → 干净 Song；不合格返回 null（永不抛异常） */
+export function validateSong(raw: unknown): Song | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id, 128)
+  const title = str(r.title, 512)
+  if (!id || !title) return null
+  const source = SOURCES.includes(r.source as Source) ? (r.source as Source) : 'local'
+  const quality = QUALITIES.includes(r.quality as Quality) ? (r.quality as Quality) : 'unknown'
+  return {
+    id,
+    source,
+    title,
+    artist: str(r.artist, 512),
+    album: str(r.album, 512),
+    durationMs: int(r.durationMs, 0, 24 * 3600 * 1000),
+    bitrate: int(r.bitrate, 0, 20_000_000),
+    quality,
+    ...(url(r.coverUrl) ? { coverUrl: url(r.coverUrl) } : {}),
+    ...(url(r.url) ? { url: url(r.url) } : {}),
+    fingerprint: str(r.fingerprint, 128),
+  }
+}
+
+/** 模块 5 的整体交接格式：{ traces: [{source, body, elapsedMs}] } */
+export function validateSearchPayload(raw: unknown): SourceTrace[] {
+  if (!raw || typeof raw !== 'object') return []
+  const traces = (raw as Record<string, unknown>).traces
+  if (!Array.isArray(traces)) return []
+  const out: SourceTrace[] = []
+  for (const t of traces.slice(0, 16)) {
+    if (!t || typeof t !== 'object') continue
+    const r = t as Record<string, unknown>
+    if (typeof r.source !== 'string' || typeof r.body !== 'string') continue
+    out.push({
+      source: r.source,
+      body: r.body.slice(0, 8 * 1024 * 1024),
+      elapsedMs: int(r.elapsedMs, 0, 600_000),
+    })
+  }
+  return out
+}

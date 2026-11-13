@@ -90,7 +90,6 @@ fs.writeFileSync(path.join(OUT, 'plugins/fx_tremolo.ypfx'), blob)
 console.log(`  → ${path.relative(ROOT, assets)}（${blob.length} 字节，${(blob.length - 18)} 字节字节码）`)
 
 if (process.argv.includes('--check')) {
-  if (process.env.NO_WASM === '0') throw new Error('unreachable')
   const state = new Float32Array(64)
   state[8] = 0.3
   let worst = 0

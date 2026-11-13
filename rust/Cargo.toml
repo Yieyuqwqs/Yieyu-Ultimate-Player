@@ -9,8 +9,7 @@ rust-version = "1.79"
 license = "MIT"
 
 [workspace.dependencies]
-# rt-multi-thread：[3] 手势状态机要真多线程 runtime；rt/fs：[19] 异步只读；sync/macros 两边都要
-tokio = { version = "1.39", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "fs", "io-util"] }
+# 没有 tokio：模块 3 用 std::thread，模块 19 用 std::fs；模块 10 只用 ring
 ring  = "0.17"
 
 [profile.release]

@@ -20,7 +20,7 @@ const DART_OUT = path.join(ROOT, 'app/lib/model/song.dart')
 
 const die = (m) => { console.error('✗ ' + m); process.exit(1) }
 
-const schemaPath = path.join(ESM, 'schema/song.js')
+const schemaPath = path.join(ESM, 'schema/fields.js')   // 纯数据模块，不依赖 zod
 if (!fs.existsSync(schemaPath)) die(`没有 ${schemaPath}（先跑 ./build.sh ts）`)
 if (!fs.existsSync(BUNDLE)) die(`没有 ${BUNDLE}（先跑 ./build.sh ts）`)
 

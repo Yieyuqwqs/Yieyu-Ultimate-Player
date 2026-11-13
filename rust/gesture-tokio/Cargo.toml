@@ -11,4 +11,4 @@ name = "yieyu_gesture"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-tokio = { workspace = true }
+# 零依赖：手势状态机用 std::thread + Mutex 足够，不需要异步运行时

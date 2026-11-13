@@ -148,25 +148,17 @@ pub extern "C" fn gesture_start() -> i32 {
     std::thread::Builder::new()
         .name("yieyu-gesture".into())
         .spawn(|| {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .enable_time()
-                .thread_name("yieyu-tokio")
-                .build()
-                .expect("tokio runtime");
-            // 常驻清扫任务：清掉卡死（系统丢 up 事件）的指针，避免状态泄漏
-            rt.block_on(async {
-                let mut tick = tokio::time::interval(Duration::from_secs(1));
-                loop {
-                    tick.tick().await;
-                    with_state(|s| {
-                        s.live.retain(|_, p| p.last.elapsed() < Duration::from_secs(3));
-                        if s.last_tap_end.is_some_and(|t| t.elapsed() > DOUBLE_WINDOW) {
-                            s.last_tap_end = None;
-                        }
-                    });
-                }
-            });
+            // 常驻清扫：清掉卡死（系统丢 up 事件）的指针，避免状态泄漏。
+            // 只需要"每秒跑一次"，引一整个异步运行时是外行的依赖 → std::thread 就够。
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                with_state(|s| {
+                    s.live.retain(|_, p| p.last.elapsed() < Duration::from_secs(3));
+                    if s.last_tap_end.is_some_and(|t| t.elapsed() > DOUBLE_WINDOW) {
+                        s.last_tap_end = None;
+                    }
+                });
+            }
         })
         .expect("spawn gesture thread");
     0

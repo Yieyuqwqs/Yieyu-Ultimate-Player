@@ -1,8 +1,8 @@
-//! 【模块 19】本地库高速异步读写 —— **只读半边**（tokio 异步 IO，零同步阻塞）。
+//! 【模块 19】本地库只读半边（零依赖：std::fs + 内存索引）。
 //!
 //! 边界铁律（docs/ARCH_24.md 铁律 4）：写者只有模块 20（core/src/store/kv_store.cpp）。
 //! 这里只 mmap/read 同一个文件，一次都不写。为什么坚持异步：读盘最坏是慢速 eMMC 上的
-//! 十几毫秒，同步读会把 UI 线程钉住；用 tokio 的 current_thread runtime 读，主线程零等待。
+//! 所以读盘只在 Boot 里做一次：解出索引后，后续查询全在内存里完成（微秒级）。
 //!
 //! 文件格式与模块 20 逐字节一致：
 //!   [magic "YKV1" u32][klen u16][vlen u32][crc u32][key][val]，vlen=0 是删除墓碑。
@@ -24,16 +24,6 @@ static STORE: OnceLock<Mutex<Option<Store>>> = OnceLock::new();
 
 fn slot() -> &'static Mutex<Option<Store>> {
     STORE.get_or_init(|| Mutex::new(None))
-}
-
-fn runtime() -> &'static tokio::runtime::Runtime {
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime")
-    })
 }
 
 fn crc32(data: &[u8]) -> u32 {
@@ -110,7 +100,7 @@ fn cstr(p: *const c_char) -> Option<String> {
 #[no_mangle]
 pub extern "C" fn yieyu_store_open(path: *const c_char) -> c_int {
     let Some(path) = cstr(path) else { return -1 };
-    let data = match runtime().block_on(tokio::fs::read(&path)) {
+    let data = match std::fs::read(&path) {
         Ok(d) => d,
         Err(_) => return -2,
     };
