@@ -32,6 +32,19 @@ void set_err(const char* fmt, ...) {
   va_end(ap);
 }
 
+// 递归建目录（一次 mkdir 只能建最后一层；私有目录可能整个都还没建）
+int ensure_dir(const char* d) {
+  if (!d || !*d) return -1;
+  char tmp[900];
+  std::snprintf(tmp, sizeof(tmp), "%s", d);
+  for (char* p = tmp + 1; *p; ++p) {
+    if (*p == '/') { *p = 0; ::mkdir(tmp, 0770); *p = '/'; }
+  }
+  ::mkdir(tmp, 0770);
+  struct stat st{};
+  return (::stat(tmp, &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : -1;
+}
+
 void scripts_dir(char* out, size_t cap) {
   if (bb_is_public()) {
     std::snprintf(out, cap, "%s/scripts", bb_dir());
@@ -158,18 +171,32 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
   }
 
   // 目录：公共目录可写 → 公共；否则 → 私有（重装后没授权时的兜底）
-  char dir[700], path[800], priv[800];
+  char dir[700], path[800], priv[800], privRoot[800], path2[800];
   scripts_dir(dir, sizeof(dir));
-  std::snprintf(priv, sizeof(priv), "%s/yieyu/scripts", g_filesDir);
+  std::snprintf(privRoot, sizeof(privRoot), "%s/yieyu", g_filesDir);
+  std::snprintf(priv, sizeof(priv), "%s/scripts", privRoot);
   std::snprintf(path, sizeof(path), "%s/%s", dir, name);
-  ::mkdir(dir, 0770);
-  ::mkdir(priv, 0770);
+
+  // ★ 必须**递归**建目录：私有目录可能是 <filesDir>/yieyu/scripts，中间层不存在时
+  //   单次 mkdir("…/yieyu/scripts") 会 ENOENT，fopen 跟着失败 → 表面看就是「导入失败」。
+  ensure_dir(privRoot);
+  ensure_dir(priv);
+  const int mk = ensure_dir(dir);
 
   FILE* f = std::fopen(path, "wb");
   if (!f) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d）", path, errno);
-    set_err("写盘被拒 errno=%d path=%s", errno, path);
-    return -3;
+    const int e1 = errno;
+    // 双保险：公共目录写不进去（没授权/只读）就立刻退到私有目录
+    if (std::strcmp(dir, priv) != 0) {
+      std::snprintf(path2, sizeof(path2), "%s/%s", priv, name);
+      f = std::fopen(path2, "wb");
+      if (f) std::snprintf(path, sizeof(path), "%s", path2);
+    }
+    if (!f) {
+      bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d, mkdir=%d）", path, e1, mk);
+      set_err("写盘被拒 errno=%d path=%s（目录建了没：%d）", e1, path, mk);
+      return -3;
+    }
   }
   const size_t wrote = std::fwrite(src.data(), 1, (size_t)len, f);
   std::fclose(f);
@@ -181,8 +208,11 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
 
   set_err("");
   int loaded = 0, rejected = 0, l2 = 0, r2 = 0;
-  lua_sandbox_reload(dir, &loaded, &rejected);
-  lua_sandbox_add_dir(priv, &l2, &r2);
+  // 以「脚本真正落盘的目录」为主目录，再把另一个目录叠上来
+  const char* mainDir = (std::strncmp(path, priv, std::strlen(priv)) == 0) ? priv : dir;
+  const char* otherDir = (std::strcmp(mainDir, priv) == 0) ? dir : priv;
+  lua_sandbox_reload(mainDir, &loaded, &rejected);
+  lua_sandbox_add_dir(otherDir, &l2, &r2);
   loaded += l2;
   rejected += r2;
   // 成功不记录（日志铁律 2）；只有全被拒才算失败
@@ -231,7 +261,13 @@ int Yieyu_ScriptCall(const char* script, const char* fn,
 }
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }
-const char* Yieyu_LastError(void) { return g_lastError; }
+const char* Yieyu_LastError(void) {
+  if (g_lastError[0]) return g_lastError;
+  // 脚本侧没有错误时，把播放器的失败原因给出去（面板/诊断文件用得上）
+  static char s_playErr[256];
+  yieyu::Engine::Instance().PlayerError(s_playErr, sizeof(s_playErr));
+  return s_playErr;
+}
 void Yieyu_Stats(char* out, size_t cap) {
   if (!out || cap == 0) return;
   yieyu::Engine::Instance().Stats(out, cap);

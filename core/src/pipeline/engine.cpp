@@ -74,6 +74,7 @@ void Engine::ResumeAudio() { Player::Instance().Resume(); }
 void Engine::StopAudio() { Player::Instance().Stop(); }
 int  Engine::SeekMs(int64_t ms) { return Player::Instance().SeekMs(ms); }
 void Engine::SetVolume(float v) { Player::Instance().SetVolume(v); }
+void Engine::PlayerError(char* out, size_t cap) const { Player::Instance().LastError(out, cap); }
 void Engine::SetDsp(bool on) { Player::Instance().SetDsp(on); }
 void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
 void Engine::SetTone(bool tube, bool vinyl, bool lpf, float drive) {

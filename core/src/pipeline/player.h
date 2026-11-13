@@ -7,6 +7,7 @@
 #pragma once
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -47,6 +48,8 @@ class Player {
   float   PeakL() const { return peakL_.load(std::memory_order_relaxed); }
   float   PeakR() const { return peakR_.load(std::memory_order_relaxed); }
   PcmRing& Ring() { return *ring_; }
+  // 最近一次播放失败的原因（只在开发者面板显示，正常界面静默）
+  void LastError(char* out, size_t cap) const;
 
  private:
   Player();
@@ -79,6 +82,8 @@ class Player {
   std::atomic<float>   peakR_{0.0f};
   std::atomic<bool>    sinkUp_{false};
   std::atomic<bool>    dspOn_{false};   // [17] 默认旁路
+  mutable std::mutex   errMu_;
+  char                 err_[256] = {0};
 };
 
 }  // namespace yieyu

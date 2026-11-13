@@ -80,6 +80,7 @@ class _DevPanelState extends State<DevPanel> {
     final rc = JsbClient.instance.playUrl(url);
     BootLog.instance.write('devpanel playUrl rc=$rc');
     setState(() => _hint = rc == 0 ? '已提交，正在起播…' : '未能受理（$rc）');
+    if (rc == 0) await _reportPlayFailure();
   }
 
   /// 本地测试音：不联网也能验证 13→15 整条链路（解码 + AAudio）。
@@ -145,6 +146,20 @@ class _DevPanelState extends State<DevPanel> {
 
   /// 选本地音频：系统选择器只保证「能读到字节」（content:// 也只是个句柄），
   /// 所以这里**先落进 App 私有缓存**再把绝对路径交给 C++ —— 原生侧只认真实路径。
+  /// 起播是异步的：等一会儿再看 Yieyu_LastError / 统计行，把真因摆到屏幕上。
+  Future<void> _reportPlayFailure() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+    final why = JsbClient.instance.lastError();
+    if (why.isNotEmpty) {
+      setState(() => _hint = '播放失败：$why');
+      await _diag('播放失败 $why');
+    } else {
+      final line = JsbClient.instance.statsLine();
+      await _diag('起播后统计 $line');
+    }
+  }
+
   Future<void> _pickAndPlay() async {
     setState(() => _hint = '正在打开文件选择器…');
     try {
@@ -169,6 +184,7 @@ class _DevPanelState extends State<DevPanel> {
         _hint = rc == 0 ? '已提交：${out.path}' : '未能受理（$rc）';
         _urlCtrl.text = out.path;
       });
+      if (rc == 0) await _reportPlayFailure();
       await _diag('选本地音频 name=${f.name} size=${bytes.length} rc=$rc path=${out.path}');
     } catch (e) {
       setState(() => _hint = '选择/写入失败');
@@ -464,6 +480,7 @@ class _DevPanelState extends State<DevPanel> {
                             : () {
                                 final rc = JsbClient.instance.playUrl(_scriptUrl);
                                 setState(() => _hint = rc == 0 ? '已提交播放（脚本给的地址）' : '未能受理（$rc）');
+                                if (rc == 0) _reportPlayFailure();
                               },
                         child: const Text('播放该地址'),
                       ),

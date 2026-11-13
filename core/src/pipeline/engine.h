@@ -35,6 +35,7 @@ class Engine {
   void SetDsp(bool on);
   void SetEqGain(int band, float db);
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
+  void PlayerError(char* out, size_t cap) const;
 
   // 各模块共享的环（唯一的"总线"）
   ByteRing& byteRing() { return *byteRing_; }

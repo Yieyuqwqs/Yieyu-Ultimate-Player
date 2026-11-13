@@ -36,6 +36,12 @@ Player& Player::Instance() {
 
 Player::Player() : ring_(new PcmRing((size_t)kRingFloats)) {}
 
+void Player::LastError(char* out, size_t cap) const {
+  if (!out || cap == 0) return;
+  std::lock_guard<std::mutex> lk(errMu_);
+  std::snprintf(out, cap, "%s", err_);
+}
+
 Player::~Player() = default;
 
 // ── 控制面 ────────────────────────────────────────────────────────────
@@ -193,15 +199,24 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   const int rc = yieyu_pdec_open(uri.c_str(), &rate, &ch, &durUs);
   if (rc != 0) {
     LOGE("[13] 打开音频失败 rc=%d uri=%.180s", rc, uri.c_str());
+    {
+      std::lock_guard<std::mutex> lk(errMu_);
+      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d（%.120s）", rc, uri.c_str());
+    }
     state_.store(kError);
     return;
   }
   rate_.store(rate > 0 ? rate : 48000, std::memory_order_relaxed);
   durationMs_.store(durUs > 0 ? durUs / 1000 : 0, std::memory_order_relaxed);
 
-  if (yieyu_aaudio_start(rate_.load(std::memory_order_relaxed), 192, &pull_trampoline, this) != 0) {
-    LOGE("[15] AAudio 起不来 rate=%d", (int)rate_.load());
+  const int sinkRc = yieyu_aaudio_start(rate_.load(std::memory_order_relaxed), 192, &pull_trampoline, this);
+  if (sinkRc != 0) {
+    LOGE("[15] AAudio 起不来 rate=%d rc=%d", (int)rate_.load(), sinkRc);
     yieyu_pdec_close();
+    {
+      std::lock_guard<std::mutex> lk(errMu_);
+      std::snprintf(err_, sizeof(err_), "[15] 声卡打不开 rc=%d（%d Hz）", sinkRc, (int)rate_.load());
+    }
     state_.store(kError);
     return;
   }
@@ -212,6 +227,10 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   tube_vinyl_init(rate_.load(std::memory_order_relaxed));
   hrtf8d_init(rate_.load(std::memory_order_relaxed));
   dspOn_.store(false, std::memory_order_relaxed);
+  {
+    std::lock_guard<std::mutex> lk(errMu_);
+    err_[0] = 0;
+  }
 
   state_.store(kPlaying);
 
