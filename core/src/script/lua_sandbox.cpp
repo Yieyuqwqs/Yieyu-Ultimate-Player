@@ -521,14 +521,43 @@ extern "C" int lua_sandbox_init(const char*) {
 
 extern "C" void lua_sandbox_set_limit(uint64_t i) { g_limit = i ? i : 50000000ull; }
 
+namespace {
+// 按脚本名找到绝对路径（公共/私有目录都登记过）
+const char* script_path(const char* name, char* buf, size_t cap) {
+  for (int i = 0; i < g_count; ++i) {
+    if (strcmp(g_names[i], name) == 0) {
+      snprintf(buf, cap, "%s", g_paths[i]);
+      return buf;
+    }
+  }
+  return nullptr;
+}
+
+// 载入脚本文件（定义全局函数/表）；返回值丢弃
+int load_script(const char* name, const char* input) {
+  char full[700];
+  if (script_path(name, full, sizeof(full)) == nullptr) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本未登记：%s（先 reload）", name);
+    return -1;
+  }
+  g_used = 0;
+  lua_pushstring(g_L, input ? input : "");
+  lua_setglobal(g_L, "input");
+  if (luaL_dofile(g_L, full) != LUA_OK) {
+    const char* err = lua_tostring(g_L, -1);
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本执行失败 %s：%s", name, err ? err : "?");
+    lua_pop(g_L, 1);
+    return -2;
+  }
+  lua_pop(g_L, 1);      // 丢掉脚本顶层返回值
+  return 0;
+}
+}  // namespace
+
 extern "C" int lua_sandbox_run(const char* name, const char* input, char* out, int cap) {
   if (!g_L || !name) return -1;
-  // 按名字找登记过的绝对路径（脚本可能在公共目录，也可能在私有目录）
-  char full[700] = {0};
-  for (int i = 0; i < g_count; ++i) {
-    if (strcmp(g_names[i], name) == 0) { snprintf(full, sizeof(full), "%s", g_paths[i]); break; }
-  }
-  if (!full[0]) {
+  char full[700];
+  if (script_path(name, full, sizeof(full)) == nullptr) {
     bb_write(YIEYU_LOG_ERROR, "[7] 脚本未登记：%s（先 reload）", name);
     return -1;
   }
@@ -544,8 +573,39 @@ extern "C" int lua_sandbox_run(const char* name, const char* input, char* out, i
   if (out && cap > 0) {
     const char* r = lua_tostring(g_L, -1);
     snprintf(out, cap, "%s", r ? r : "");
-    lua_pop(g_L, 1);
   }
+  lua_pop(g_L, 1);
+  return 0;
+}
+
+// 调用脚本里的某个全局函数（音源脚本的 get_music_url(...) 就是这样用的）。
+// argv/argc 是字符串参数（NULL 结尾），返回字符串结果写进 out。
+// 返回 0=成功，-1=未初始化/参数错，-2=脚本载入失败，-3=没有这个函数，-4=运行时报错。
+extern "C" int lua_sandbox_call(const char* name, const char* fn,
+                                const char* const* argv, int argc,
+                                char* out, int cap) {
+  if (out && cap > 0) out[0] = 0;
+  if (!g_L || !name || !fn) return -1;
+  const int lr = load_script(name, nullptr);
+  if (lr != 0) return -2;
+
+  lua_getglobal(g_L, fn);
+  if (!lua_isfunction(g_L, -1)) {
+    lua_pop(g_L, 1);
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本 %s 里没有函数 %s", name, fn);
+    return -3;
+  }
+  for (int i = 0; i < argc; ++i) lua_pushstring(g_L, argv[i] ? argv[i] : "");
+  g_used = 0;
+  if (lua_pcall(g_L, argc, 1, 0) != LUA_OK) {
+    const char* err = lua_tostring(g_L, -1);
+    bb_write(YIEYU_LOG_ERROR, "[7] %s.%s 运行报错：%s", name, fn, err ? err : "?");
+    lua_pop(g_L, 1);
+    return -4;
+  }
+  const char* r = lua_tostring(g_L, -1);
+  if (out && cap > 0) snprintf(out, cap, "%s", r ? r : "");
+  lua_pop(g_L, 1);
   return 0;
 }
 
@@ -557,6 +617,10 @@ extern "C" void lua_sandbox_set_limit(uint64_t) {}
 extern "C" int lua_sandbox_run(const char*, const char*, char* out, int cap) {
   if (out && cap) out[0] = 0;
   return -2;                              // -2 = 宿主未接入 LuaJIT
+}
+extern "C" int lua_sandbox_call(const char*, const char*, const char* const*, int, char* out, int cap) {
+  if (out && cap) out[0] = 0;
+  return -2;
 }
 extern "C" void lua_sandbox_shutdown(void) {}
 #endif

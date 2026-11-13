@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <atomic>
 #include <cstring>
+#include <cstdarg>
+#include <cstdio>
 #include <mutex>
 
 namespace {
@@ -22,6 +24,14 @@ char              g_lastError[256] = {0};
 // 脚本目录：公共目录可写就用公共目录（用户能直接放脚本），否则落到 App 私有目录。
 // ★ 重装 App 会撤销「所有文件访问」权限 —— 那时公共目录写不进去，
 //   旧代码直接返回 -3，表现就是「脚本导入失败」，其实只是权限没了。必须兜底。
+// 失败原因只给「开发者面板/诊断文件」看，绝不进正常界面（铁律：UI 静默）
+void set_err(const char* fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  std::vsnprintf(g_lastError, sizeof(g_lastError), fmt, ap);
+  va_end(ap);
+}
+
 void scripts_dir(char* out, size_t cap) {
   if (bb_is_public()) {
     std::snprintf(out, cap, "%s/scripts", bb_dir());
@@ -116,15 +126,18 @@ void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
 int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
   if (!name || !data || len <= 0) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：参数非法 name=%p data=%p len=%d", (const void*)name, (const void*)data, len);
+    set_err("参数非法：name=%s len=%d", name ? name : "(null)", len);
     return -1;
   }
   const size_t nlen = std::strlen(name);
   if (nlen < 5 || std::strcmp(name + nlen - 4, ".lua") != 0) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：文件名不是 .lua（%s）", name);
+    set_err("文件名不是 .lua：%s", name);
     return -1;
   }
   if (len > 512 * 1024) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：脚本 %d 字节超过 512KB", len);
+    set_err("脚本太大：%d 字节（上限 512KB）", len);
     return -4;
   }
 
@@ -139,6 +152,7 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
   for (const char* b : kBan) {
     if (std::strstr(src.data(), b) != nullptr) {
       bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入 %s：触发沙箱黑名单 \"%s\"（脚本 %d 字节）", name, b, len);
+      set_err("触发沙箱黑名单：%s", b);
       return -2;
     }
   }
@@ -154,22 +168,29 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
   FILE* f = std::fopen(path, "wb");
   if (!f) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d）", path, errno);
+    set_err("写盘被拒 errno=%d path=%s", errno, path);
     return -3;
   }
   const size_t wrote = std::fwrite(src.data(), 1, (size_t)len, f);
   std::fclose(f);
   if (wrote != (size_t)len) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：只写进 %zu/%d 字节 → %s", wrote, len, path);
+    set_err("只写进 %zu/%d 字节", wrote, len);
     return -3;
   }
 
+  set_err("");
   int loaded = 0, rejected = 0, l2 = 0, r2 = 0;
   lua_sandbox_reload(dir, &loaded, &rejected);
   lua_sandbox_add_dir(priv, &l2, &r2);
   loaded += l2;
   rejected += r2;
   // 成功不记录（日志铁律 2）；只有全被拒才算失败
-  return (rejected > 0 && loaded == 0) ? -2 : 0;
+  if (rejected > 0 && loaded == 0) {
+    set_err("脚本已写入，但全部被沙箱拒绝（%d 个）", rejected);
+    return -2;
+  }
+  return 0;
 }
 
 int Yieyu_ReloadScripts(int* loaded, int* rejected) {
@@ -188,6 +209,25 @@ int Yieyu_ReloadScripts(int* loaded, int* rejected) {
   if (loaded) *loaded = l1 + l2;
   if (rejected) *rejected = r1 + r2;
   return 0;
+}
+
+int Yieyu_ScriptCall(const char* script, const char* fn,
+                     const char* a1, const char* a2, const char* a3,
+                     char* out, int cap) {
+  if (out && cap > 0) out[0] = 0;
+  if (!script || !fn) return -1;
+  const char* argv[3] = {a1, a2, a3};
+  int argc = 0;
+  while (argc < 3 && argv[argc] != nullptr) ++argc;
+  bb_new_trace();
+  const int rc = lua_sandbox_call(script, fn, argv, argc, out, cap);
+  if (rc != 0) {
+    set_err("脚本调用失败 rc=%d（%s.%s）", rc, script, fn);
+    bb_write(YIEYU_LOG_ERROR, "[7] ScriptCall 失败 rc=%d %s.%s", rc, script, fn);
+  } else {
+    set_err("");
+  }
+  return rc;
 }
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }

@@ -25,11 +25,16 @@ class DevPanel extends StatefulWidget {
 class _DevPanelState extends State<DevPanel> {
   final TextEditingController _urlCtrl = TextEditingController();
   final TextEditingController _pathCtrl = TextEditingController();
+  final TextEditingController _scriptCtrl = TextEditingController(text: 'yieyu.lua');
+  final TextEditingController _sourceCtrl = TextEditingController(text: 'wy');
+  final TextEditingController _midCtrl = TextEditingController();
+  TextEditingController _qualityCtrl = TextEditingController(text: 'master');
   StreamSubscription<YieyuSnapshot>? _sub;
   YieyuSnapshot _snap = YieyuSnapshot.zero();
   String _hint = '';
   String _stats = '';
   String _scriptHint = '';
+  String _scriptUrl = '';
   Timer? _statsTimer;
   double _volume = 1.0;
   bool _dspOn = false;
@@ -59,6 +64,10 @@ class _DevPanelState extends State<DevPanel> {
     _sub?.cancel();
     _urlCtrl.dispose();
     _pathCtrl.dispose();
+    _scriptCtrl.dispose();
+    _sourceCtrl.dispose();
+    _midCtrl.dispose();
+    _qualityCtrl.dispose();
     super.dispose();
   }
 
@@ -167,6 +176,28 @@ class _DevPanelState extends State<DevPanel> {
     }
   }
 
+  /// 用已导入的脚本取播放地址：证明「导入 → 执行 → 拿到 URL → 出声」整条链通。
+  Future<void> _callScript() async {
+    final script = _scriptCtrl.text.trim();
+    final source = _sourceCtrl.text.trim();
+    final mid = _midCtrl.text.trim();
+    final quality = _qualityCtrl.text.trim();
+    if (script.isEmpty || mid.isEmpty) {
+      setState(() => _scriptHint = '脚本名与歌曲 id 必填');
+      return;
+    }
+    final r = JsbClient.instance.scriptCall(script, 'get_music_url', source, mid, quality);
+    final why = r.$1 == 0 ? '' : JsbClient.instance.lastError();
+    setState(() {
+      _scriptUrl = r.$2;
+      _scriptHint = r.$1 == 0
+          ? (r.$2.isEmpty ? 'rc=0，但脚本返回空（看状态行/日志）' : 'rc=0，已拿到地址')
+          : 'rc=${r.$1}${why.isEmpty ? '' : '：$why'}';
+    });
+    await _diag('scriptCall $script.get_music_url($source,$mid,$quality) rc=${r.$1} '
+        'out=${r.$2} why=$why');
+  }
+
   Future<void> _importByPath() async {
     final p = _pathCtrl.text.trim();
     if (p.isEmpty) {
@@ -183,8 +214,10 @@ class _DevPanelState extends State<DevPanel> {
       final bytes = await f.readAsBytes();
       final name = p.split('/').last;
       final rc = JsbClient.instance.importScript(name, bytes) ?? -1;
-      setState(() => _scriptHint = 'rc=$rc（$name，${bytes.length} 字节）');
-      await _diag('按路径导入 name=$name size=${bytes.length} rc=$rc');
+      final why = rc == 0 ? '' : JsbClient.instance.lastError();
+      setState(() => _scriptHint =
+          'rc=$rc（$name，${bytes.length} 字节）' + (why.isEmpty ? '' : '\n原因：' + why));
+      await _diag('按路径导入 name=$name size=${bytes.length} rc=$rc why=$why');
     } catch (e) {
       setState(() => _scriptHint = '读取失败');
       await _diag('按路径导入异常 $e');
@@ -370,6 +403,76 @@ class _DevPanelState extends State<DevPanel> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: SelectableText(_scriptHint,
+                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('用脚本取播放地址', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _scriptCtrl,
+                          decoration: const InputDecoration(
+                              labelText: '脚本名', isDense: true, border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 84,
+                        child: TextField(
+                          controller: _sourceCtrl,
+                          decoration: const InputDecoration(
+                              labelText: '源', isDense: true, border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 96,
+                        child: TextField(
+                          controller: _qualityCtrl,
+                          decoration: const InputDecoration(
+                              labelText: '音质', isDense: true, border: OutlineInputBorder()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _midCtrl,
+                    decoration: const InputDecoration(
+                        labelText: '歌曲 id（musicId）', isDense: true, border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(onPressed: _callScript, child: const Text('调用 get_music_url')),
+                      OutlinedButton(
+                        onPressed: _scriptUrl.isEmpty
+                            ? null
+                            : () {
+                                final rc = JsbClient.instance.playUrl(_scriptUrl);
+                                setState(() => _hint = rc == 0 ? '已提交播放（脚本给的地址）' : '未能受理（$rc）');
+                              },
+                        child: const Text('播放该地址'),
+                      ),
+                    ],
+                  ),
+                  if (_scriptUrl.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: SelectableText(_scriptUrl,
                           style: const TextStyle(fontSize: 11, color: Colors.white54)),
                     ),
                 ],

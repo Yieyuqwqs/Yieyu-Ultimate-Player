@@ -76,7 +76,8 @@ class _SettingsPageState extends State<SettingsPage> {
       }
 
       final rc = JsbClient.instance.importScript(f.name, bytes) ?? -1;
-      await _diag('importScript name=${f.name} size=${bytes.length} rc=$rc');
+      final why = rc == 0 ? '' : JsbClient.instance.lastError();
+      await _diag('importScript name=${f.name} size=${bytes.length} rc=$rc why=$why');
       if (rc != 0) {
         await BootLog.instance.write('importScript 失败 rc=$rc name=${f.name} size=${bytes.length}');
       }

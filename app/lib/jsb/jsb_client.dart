@@ -89,6 +89,12 @@ typedef _VoidVoidNative = Void Function();
 typedef _VoidVoidDart = void Function();
 typedef _FloatVoidNative = Void Function(Float);
 typedef _FloatVoidDart = void Function(double);
+typedef _ConstCharNative = Pointer<Utf8> Function();
+typedef _CallNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int32);
+typedef _CallDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
+typedef _ConstCharDart = Pointer<Utf8> Function();
 typedef _StatsNative = Void Function(Pointer<Utf8>, IntPtr);
 typedef _IntVoidNative = Void Function(Int32);
 typedef _IntVoidDart = void Function(int);
@@ -142,6 +148,10 @@ class JsbClient {
       _lib.lookupFunction<_IntFloatVoidNative, _IntFloatVoidDart>('Yieyu_SetEqGain');
   late final _ToneVoidDart _setTone =
       _lib.lookupFunction<_ToneVoidNative, _ToneVoidDart>('Yieyu_SetTone');
+  late final _CallDart _scriptCallFn =
+      _lib.lookupFunction<_CallNative, _CallDart>('Yieyu_ScriptCall');
+  late final _ConstCharDart _lastError =
+      _lib.lookupFunction<_ConstCharNative, _ConstCharDart>('Yieyu_LastError');
   late final _StatsDart _stats =
       _lib.lookupFunction<_StatsNative, _StatsDart>('Yieyu_Stats');
   late final _FloatVoidDart _setVolume =
@@ -312,6 +322,40 @@ class JsbClient {
     try {
       _setTone(tube ? 1 : 0, vinyl ? 1 : 0, lpf ? 1 : 0, drive);
     } catch (_) {}
+  }
+
+  /// 调脚本里的函数（音源脚本的 get_music_url 就走这里）。返回 (rc, 结果串)。
+  (int, String) scriptCall(String script, String fn,
+      [String? a1, String? a2, String? a3]) {
+    final sp = script.toNativeUtf8();
+    final fp = fn.toNativeUtf8();
+    final p1 = a1?.toNativeUtf8();
+    final p2 = a2?.toNativeUtf8();
+    final p3 = a3?.toNativeUtf8();
+    final buf = malloc.allocate<Utf8>(4096);
+    try {
+      final rc = _scriptCallFn(sp, fp, p1 ?? nullptr, p2 ?? nullptr, p3 ?? nullptr, buf, 4096);
+      return (rc, buf.toDartString());
+    } catch (_) {
+      return (-1, '');
+    } finally {
+      malloc.free(sp);
+      malloc.free(fp);
+      malloc.free(buf);
+      if (p1 != null) malloc.free(p1);
+      if (p2 != null) malloc.free(p2);
+      if (p3 != null) malloc.free(p3);
+    }
+  }
+
+  /// 最近一次失败的**技术原因**（只在开发者面板/诊断文件里出现，绝不进正常界面）。
+  String lastError() {
+    try {
+      final p = _lastError();
+      return p == nullptr ? '' : p.toDartString();
+    } catch (_) {
+      return '';
+    }
   }
 
   /// 各模块健康度一行（含播放器 st= 与 underrun=）。核心没起来时返回空串。

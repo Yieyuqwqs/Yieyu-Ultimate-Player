@@ -184,6 +184,35 @@ JSB 新增 `Yieyu_SetDsp(on)` / `Yieyu_SetEqGain(band, db)` / `Yieyu_SetTone(tub
 
 ---
 
+### 2.10 脚本 → 播放地址 → 出声（2026-11-13 傍晚，run #56 起）
+
+**之前的状态（这就是"导入了也没用"的原因）**：`lua_sandbox_run` / `lua_sandbox_call`
+**全仓没有任何调用点** —— 沙箱能导入、能校验、能从 Lua 发 HTTP，但**没人让它执行**，
+所以脚本里写的 `get_music_url()` 永远不会被调到。
+
+**这次补上的链路**：
+```
+Dart 面板「调用 get_music_url」
+  → Yieyu_ScriptCall(script, fn, a1, a2, a3, out, cap)     [24] JSB
+  → lua_sandbox_call()：按名字载入脚本 → 取全局函数 → 压参数 → pcall
+  → 脚本内 http_post(url, headers表, body)  ← 两种参数顺序都吃，返回 (body, status)
+  → Go yieyu_fetch_ex(...) 带状态码
+  → 返回 URL → 面板「播放该地址」→ Yieyu_PlayUrl → [13] 解码 → [15] AAudio
+```
+
+**返回值约定**（`lua_sandbox_call` / `Yieyu_ScriptCall`）：
+`0` 成功 / `-1` 参数错 / `-2` 脚本载入失败 / `-3` 没有这个函数 / `-4` 运行时报错；
+失败原因进 `Yieyu_LastError()`，开发者面板和 `import_diag.txt` 都能看到（正常界面依旧静默）。
+
+**老板那份脚本（`yieyu.lua`）逐条核对结果**：
+- 黑名单 9 条**一条都没命中** → 导入失败与脚本内容无关；
+- `http_post(target_url, headers, body)` 的表头 + 参数顺序 → 老实现会 `luaL_checkstring(表)` 直接报错；
+- `local body, code = http_post(...)` 的第二个返回值 → 老实现只回 body，`code` 是 nil，
+  `if code ~= 200 then return nil end` 永远成立 → 永远拿不到 URL。两处都在 #55 修掉；
+- `on_init()` 是自定义函数，宿主不会自己调（要调就走 `Yieyu_ScriptCall(script, "on_init", NULL, NULL, NULL, out, cap)`）。
+
+---
+
 ---
 
 ## 3. 本机工具脚本（都在 `~/work/up/`）

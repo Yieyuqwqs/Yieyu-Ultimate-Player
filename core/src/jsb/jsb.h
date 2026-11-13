@@ -79,6 +79,12 @@ YIEYU_API void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive);
 // loaded/rejected 可传 NULL。返回 0=完成。
 YIEYU_API int Yieyu_ReloadScripts(int* loaded, int* rejected);
 
+// 调脚本函数（音源脚本的 get_music_url 就走这里）。
+// a1..a3 可为 NULL（表示该参数不存在）。结果写进 out。0=成功，<0=见 lua_sandbox_call。
+YIEYU_API int Yieyu_ScriptCall(const char* script, const char* fn,
+                               const char* a1, const char* a2, const char* a3,
+                               char* out, int cap);
+
 // 界面导入（SAF 选完文件后直接喂字节，不需要用户去翻存储路径）：
 //   name 以 .lua 结尾；data/len 是文件内容；写入私有目录后立刻注册进沙箱。
 //   返回 0=成功，-1=参数错，-2=触发黑名单，-3=写盘失败，-4=超限(>512KB)
