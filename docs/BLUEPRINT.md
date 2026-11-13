@@ -139,6 +139,8 @@
 | 23 | `'luaL_tolstring' was not declared` | LuaJIT 是 **Lua 5.1**，没有 5.2+ 的 `luaL_tolstring` | 改用 `lua_tostring` 逐参数取 |
 | 24 | LuaJIT 编不出来时整轮构建失败 | 克隆/编译不可控 | 做成**非阻塞**：编不出来就走 stub，导入/校验照常 |
 
+| 25 | 脚本 `http_get` 永远返回空 | 沙箱背后没有任何 HTTP 实现 | 新增 `go/fetch` → `libyieyu_fetch.so`（Go c-shared，自带 TLS），C++ 侧 `extern "C"` 直调；**不用 curl 是为了避开 OpenSSL 交叉编译** |
+
 ### C. 装机运行期（最值钱的两条）
 
 | # | 报错 | 根因 | 修法 |

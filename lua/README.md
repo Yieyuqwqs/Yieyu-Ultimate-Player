@@ -45,6 +45,21 @@
 |---|---|
 | 导入 / 黑名单 / 登记 | ✅ 已可用 |
 | Lua 执行引擎 | ✅ **已接入**（CI 自动编 LuaJIT 826K，编不出自动降级为 stub） |
-| `http_get/http_post` 真发请求 | ❌ 仍是空串（要接模块 9 的 libcurl）—— **这就是搜不到歌的唯一原因** |
+| `http_get/http_post` 真发请求 | ✅ **已接通**：走 `libyieyu_fetch.so`（Go + TLS1.3/HTTP2，不依赖 OpenSSL） |
 
 **所以现在导入会成功、脚本会被校验和登记，但"导入完就能搜歌"要等 curl 接上。**
+
+
+## HTTP 是怎么实现的（模块 9 的替代方案）
+
+`go/fetch/main.go` → `libyieyu_fetch.so`（`-buildmode=c-shared`），C ABI：
+
+```c
+char* yieyu_fetch(url, method, body, headers, int* outLen);
+void  yieyu_fetch_free(char* p);
+```
+
+- 自带 TLS 1.3 / HTTP2 / 连接池，**不需要 OpenSSL 或 mbedTLS**
+- 单次响应上限 256KB，超时 12s
+- 只允许 http(s)，与沙箱白名单一致
+- 沙箱没链接到它时自动退化为返回空串（不崩）
