@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import '../model/song.dart';
 import 'jsb_ops.dart';
 
 /// 【模块 24】JSB 的 Dart 侧。
@@ -113,6 +114,12 @@ typedef _SearchNative = Int32 Function(Pointer<Utf8>);
 typedef _SearchDart = int Function(Pointer<Utf8>);
 typedef _PlaySongNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _PlaySongDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _MakeKaraokeNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _MakeKaraokeDart = int Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _KaraokeStatusNative = Int32 Function(Pointer<Utf8>, Int32);
+typedef _KaraokeStatusDart = int Function(Pointer<Utf8>, int);
+typedef _HttpProbeNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int32);
+typedef _HttpProbeDart = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
 typedef _StrIntNative = Int32 Function(Pointer<Utf8>);
 typedef _StrIntDart = int Function(Pointer<Utf8>);
 typedef _BufIntNative = Int32 Function(Pointer<Utf8>, IntPtr);
@@ -170,6 +177,10 @@ class JsbClient {
       _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetRate');
   late final _DirDart _logDir =
       _lib.lookupFunction<_DirNative, _DirDart>('Yieyu_LogDir');
+  late final _MakeKaraokeDart _makeKaraokeFn =
+      _lib.lookupFunction<_MakeKaraokeNative, _MakeKaraokeDart>('Yieyu_MakeKaraoke');
+  late final _KaraokeStatusDart _karaokeStatusFn =
+      _lib.lookupFunction<_KaraokeStatusNative, _KaraokeStatusDart>('Yieyu_KaraokeStatus');
   late final _HttpProbeDart _httpProbeFn =
       _lib.lookupFunction<_HttpProbeNative, _HttpProbeDart>('Yieyu_HttpProbe');
   late final _CallDart _scriptCallFn =
@@ -199,11 +210,11 @@ class JsbClient {
       _lib.lookupFunction<_IntIntNative, _IntIntDart>('Yieyu_StoreCount');
 
   final _snapCtrl = StreamController<YieyuSnapshot>.broadcast();
-  final _songCtrl = StreamController<List<Map<String, Object?>>>.broadcast();
+  final _songCtrl = StreamController<List<Song>>.broadcast();
   final _msgCtrl = StreamController<String>.broadcast();   // 搜索进度/失败原因（只给界面说人话）
 
   Stream<YieyuSnapshot> get snapshots => _snapCtrl.stream;
-  Stream<List<Map<String, Object?>>> get songs => _songCtrl.stream;
+  Stream<List<Song>> get songs => _songCtrl.stream;
   Stream<String> get messages => _msgCtrl.stream;
 
   Timer? _timer;
@@ -278,10 +289,11 @@ class JsbClient {
       // 'S'：搜索结果（JSON 数组）
       try {
         final raw = jsonDecode(payload);
-        final list = <Map<String, Object?>>[];
+        final list = <Song>[];
         if (raw is List) {
           for (final e in raw) {
-            if (e is Map) list.add(Map<String, Object?>.from(e));
+            final song = Song.tryParse(e);   // [6] 生成的模型：字段/默认值只在一个地方定义
+            if (song != null) list.add(song);
           }
         }
         _songCtrl.add(list);
@@ -324,25 +336,39 @@ class JsbClient {
     _setRate(hz);
   }
 
-  /// 各模块健康度一行（只在开发/自检页显示，正常界面不展示）
-  String statsText() {
+  /// [18] 生成伴奏（离线人声消除）。返回 0=已受理；-2=已经在跑。
+  int makeKaraoke(String srcWav, String dstWav) {
+    final a = srcWav.toNativeUtf8();
+    final b = dstWav.toNativeUtf8();
+    try {
+      return _makeKaraokeFn(a, b);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+    }
+  }
+
+  /// [18] -2=空闲 -1=运行中 0=完成 <0=失败码；完成时返回输出路径。
+  (int, String) karaokeStatus() {
     final buf = malloc.allocate<Utf8>(600);
     try {
-      _stats(buf, 600);
-      return buf.toDartString();
+      final rc = _karaokeStatusFn(buf, 600);
+      return (rc, rc == 0 ? buf.toDartString() : '');
     } catch (_) {
-      return '';
+      return (-1, '');
     } finally {
       malloc.free(buf);
     }
   }
 
-  /// [9] 自研取流自检：返回 HTTP 状态码（<0 = 网络/参数错误）
+  /// [9] 自研取流自检：对 http:// 发一次真实请求，返回 HTTP 状态码（<0 = 网络/参数错误）
   int httpProbe(String url) {
     final u = url.toNativeUtf8();
-    final out = malloc.allocate<Utf8>(200);
+    final out = malloc.allocate<Utf8>(240);
     try {
-      return _httpProbeFn(u, out, 200);
+      return _httpProbeFn(u, out, 240);
     } catch (_) {
       return -1;
     } finally {
@@ -350,17 +376,6 @@ class JsbClient {
       malloc.free(out);
     }
   }
-
-  /// 最近一次底层失败原因（只给诊断页/自检页看）
-  String get lastError {
-    try {
-      final p = _lastError();
-      return p == nullptr ? '' : p.toDartString();
-    } catch (_) {
-      return '';
-    }
-  }
-
   int kvCount() => _kvCount();
   int storeCount() => _storeCount();
 

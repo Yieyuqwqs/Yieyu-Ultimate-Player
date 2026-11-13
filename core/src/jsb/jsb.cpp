@@ -120,6 +120,15 @@ void Yieyu_SetDsp(int on) { if (g_inited.load()) yieyu::Engine::Instance().SetDs
 void Yieyu_SetEqGain(int band, float db) {
   if (g_inited.load()) yieyu::Engine::Instance().SetEqGain(band, db);
 }
+int Yieyu_MakeKaraoke(const char* srcWav, const char* dstWav) {
+  if (!g_inited.load()) return -1;
+  return yieyu::Engine::Instance().KaraokeStart(srcWav, dstWav);
+}
+
+int Yieyu_KaraokeStatus(char* out, int cap) {
+  return yieyu::Engine::Instance().KaraokeStatus(out, cap > 0 ? (size_t)cap : 0);
+}
+
 int Yieyu_HttpProbe(const char* url, char* out, int cap) {
   if (!url || !*url) return -1;
   return yieyu_http_probe(url, out, cap);

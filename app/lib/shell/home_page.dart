@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../animation/vector_stage.dart';
 import '../gestures/gesture_bridge.dart';
 import '../jsb/jsb_client.dart';
+import '../model/song.dart';
 import '../jsb/jsb_ops.dart';
 import 'settings_page.dart';
 
@@ -23,7 +24,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final List<Map<String, Object?>> _songs = [];
+  final List<Song> _songs = [];
   final List<StreamSubscription<Object?>> _subs = [];
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -97,13 +98,14 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _playSong(Map<String, Object?> s) {
-    final src = (s['source'] as String?) ?? 'wy';
-    final id = (s['id'] as String?) ?? '';
-    final mid = (s['mid'] as String?) ?? '';
-    final rc = JsbClient.instance.playSong(src, id, mid);
+  void _playSong(Song s) {
+    final rc = JsbClient.instance.playSong(
+      s.source.isEmpty ? 'wy' : s.source,
+      s.id,
+      s.mid,
+    );
     if (!mounted) return;
-    setState(() => _status = rc == 0 ? '正在起播：${s['name'] ?? ''}' : '点歌没能受理');
+    setState(() => _status = rc == 0 ? '正在起播：${s.title}' : '点歌没能受理');
   }
 
   @override
@@ -180,9 +182,9 @@ class _HomePageState extends State<HomePage> {
                       itemCount: _songs.length,
                       itemBuilder: (_, i) {
                         final s = _songs[i];
-                        final title = (s['name'] as String?) ?? '';
-                        final artist = (s['artist'] as String?) ?? '';
-                        final album = (s['album'] as String?) ?? '';
+                        final title = s.title;
+                        final artist = s.artist;
+                        final album = s.album;
                         return ListTile(
                           dense: true,
                           leading: const Icon(Icons.music_note, size: 20),

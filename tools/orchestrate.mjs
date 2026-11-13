@@ -67,6 +67,9 @@ const STEPS = [
   { id: 'ts', deps: ['doctor'], bin: 'npm', desc: '模块6 TS 清洗层 → cleaner.mjs',
     cmd: () => ['node', 'tools/ts-build.mjs'], out: ['ts'], inputs: ['ts'] },
 
+  { id: 'schema', deps: ['ts'], bin: 'node', desc: '模块6 TS schema → Dart 模型 + 清洗回归',
+    cmd: () => ['node', 'tools/gen-schema.mjs'], env: () => ({ ...process.env, OUT }), out: ['schema'], inputs: ['ts', 'tools/gen-schema.mjs'] },
+
   { id: 'wasm', deps: ['doctor'], bin: 'cargo', desc: '模块8 插件 wasm32-wasip1',
     cmd: () => ['cargo', 'build', '--manifest-path', 'wasm/fx_tremolo/Cargo.toml', '--release',
       '--target', 'wasm32-wasip1'],
@@ -85,7 +88,7 @@ const STEPS = [
   { id: 'gradle', deps: ['native'], bin: 'gradle', desc: '模块22 Kotlin 前台服务 AAR',
     cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },
 
-  { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
+  { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'schema', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
     cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/rust', 'out/go', 'out/ts', 'out/wasm'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',

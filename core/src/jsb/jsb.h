@@ -81,6 +81,11 @@ YIEYU_API void Yieyu_SetRate(int hz);
 // ⑭ [9] 自研取流自检：对 http:// 发一次请求，返回 HTTP 状态码，信息写进 out（诊断面板显示）。
 YIEYU_API int Yieyu_HttpProbe(const char* url, char* out, int cap);
 
+// ⑮ [18] 离线人声消除（生成伴奏）：异步受理，状态用 Yieyu_KaraokeStatus 查。
+//    MakeKaraoke: 0=已受理 <0=参数错/已在跑；KaraokeStatus: -2 空闲 -1 运行中 0 完成 <0 失败码
+YIEYU_API int Yieyu_MakeKaraoke(const char* srcWav, const char* dstWav);
+YIEYU_API int Yieyu_KaraokeStatus(char* out, int cap);
+
 // ⑨ [5] 搜歌（真实网络，走 Go 编的 libyieyu_fetch.so）。
 //    0=已受理（异步，网络在独立线程）；结果从 Yieyu_Poll 取：
 //      事件帧 = [0] 类型 'S'=结果JSON数组 / 'E'=错误文案

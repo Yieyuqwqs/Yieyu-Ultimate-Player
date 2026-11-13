@@ -16,6 +16,7 @@
 #include "../store/kv_store.h"
 #include "../audio/aaudio_sink.h"
 #include "../script/lua_sandbox.h"
+#include "../ai/vocals.h"
 #include "player.h"
 
 // [5]/[9] 搜歌出口：Go 编的 libyieyu_fetch.so（与 Lua 的 http_* 是同一份）
@@ -231,6 +232,35 @@ void Engine::PlayerError(char* out, size_t cap) const { Player::Instance().LastE
 void Engine::SetDsp(bool on) { dspOn_.store(on ? 1 : 0); Player::Instance().SetDsp(on); }
 void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
 void Engine::SetRate(int hz) { Player::Instance().SetTargetRate(hz); }
+
+// ── [18] 离线人声消除（只在后台线程跑，绝不进音频线程）────────────────
+int Engine::KaraokeStart(const char* srcWav, const char* dstWav) {
+  if (!srcWav || !dstWav || !*srcWav || !*dstWav) return -1;
+  int expect = -2;
+  if (!karaoke_.compare_exchange_strong(expect, -1)) return -2;   // 已经在跑
+  {
+    std::lock_guard<std::mutex> lk(karaokeMu_);
+    karaokeOut_.assign(dstWav);
+  }
+  const std::string src(srcWav), dst(dstWav);
+  std::thread([this, src, dst] {
+    const int rc = yieyu_vocals_render(src.c_str(), dst.c_str(), nullptr);
+    karaoke_.store(rc == 0 ? 0 : (rc < 0 ? rc : -3));
+    if (rc != 0) {
+      bb_write(YIEYU_LOG_ERROR, "[18] 人声消除失败 rc=%d（%s）", rc, yieyu_vocals_error());
+    }
+  }).detach();
+  return 0;
+}
+
+int Engine::KaraokeStatus(char* out, size_t cap) const {
+  const int st = karaoke_.load();
+  if (out && cap > 0) {
+    std::lock_guard<std::mutex> lk(karaokeMu_);
+    std::snprintf(out, cap, "%s", st == 0 ? karaokeOut_.c_str() : (st < -1 ? yieyu_vocals_error() : ""));
+  }
+  return st;
+}
 void Engine::SetTone(bool tube, bool vinyl, bool lpf, float drive) {
   Player::Instance().SetTone(tube, vinyl, lpf, drive);
 }

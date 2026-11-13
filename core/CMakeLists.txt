@@ -13,7 +13,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(YIEYU_OFFLINE_ASSETS "没有 third_party 时编空实现，让骨架先过" ON)
 option(YIEYU_OBFUSCATE "模块11 Obfuscator-LLVM 混淆" OFF)
-option(YIEYU_ENABLE_AI "模块18 ONNX Runtime 人声消除" OFF)
 
 set(YIEYU_OUT "$ENV{YIEYU_OUT}" CACHE PATH "各语言产物落位（out/）")
 if(NOT YIEYU_OUT)
@@ -110,7 +109,7 @@ set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
 set(SRC_SCRIPT  src/script/lua_sandbox.cpp)            # [7]
 set(SRC_WASM    src/wasm/host_wasmedge.cpp)            # [8]
 set(SRC_ASM     ../asm/neon_ct_compare.S)              # [12]
-set(SRC_AI      src/ai/onnx_vocals.cpp)                # [18]（默认空实现）
+set(SRC_AI      src/ai/vocals.cpp)                     # [18] 离线人声消除（Python 生成核）
 
 add_library(yieyu_core SHARED
   ${SRC_COMMON} ${SRC_JSB} ${SRC_PIPE} ${SRC_AUDIO} ${SRC_DSP}
@@ -149,9 +148,6 @@ if(NOT YIEYU_OFFLINE_ASSETS)
   if(SPEEXDSP_LIB)
     list(APPEND YIEYU_LIBS ${SPEEXDSP_LIB})
   endif()
-endif()
-if(YIEYU_ENABLE_AI)
-  list(APPEND YIEYU_LIBS onnxruntime)
 endif()
 # ★ Rust 的 license/store **不做静态链**：cdylib 没有 SONAME，链进来会把绝对路径写进
 #   DT_NEEDED（CI 15.5 就是拦这个，装机 dlopen 必炸）。改为运行时 dlopen，

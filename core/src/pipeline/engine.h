@@ -40,6 +40,11 @@ class Engine {
   void SetEqGain(int band, float db);
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
   void SetRate(int hz);                 // [14] 输出采样率（0=自动）
+
+  // [18] 离线人声消除：异步受理（整曲 STFT，几秒到几十秒）
+  //   KaraokeStatus: -2=空闲 -1=运行中 0=完成 <0=失败码
+  int KaraokeStart(const char* srcWav, const char* dstWav);
+  int KaraokeStatus(char* out, size_t cap) const;
   void PlayerError(char* out, size_t cap) const;
 
   // ── [5]/[9] 搜歌与点歌（真实网络，走 Go 编的 libyieyu_fetch.so）────────
@@ -72,6 +77,9 @@ class Engine {
   std::atomic<int> lic_{-1};
   // [11] 自校验结果：-1=未跑 0=被改过 1=一致
   std::atomic<int> integ_{-1};
+  std::atomic<int> karaoke_{-2};          // [18] -2 空闲 / -1 运行中 / 0 完成 / <0 失败
+  mutable std::mutex karaokeMu_;
+  std::string karaokeOut_;
 
   std::unique_ptr<ByteRing> byteRing_;
 

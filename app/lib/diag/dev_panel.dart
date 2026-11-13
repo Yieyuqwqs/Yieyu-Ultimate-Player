@@ -163,6 +163,45 @@ class _DevPanelState extends State<DevPanel> {
     }
   }
 
+  /// [18] 选一个 WAV → 送到原生离线跑一遍中置抑制 → 生成 _karaoke.wav
+  Future<void> _makeKaraoke() async {
+    setState(() => _hint = '正在打开文件选择器…');
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+      if (picked == null || picked.files.isEmpty) { setState(() => _hint = '已取消'); return }
+      final f = picked.files.single;
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
+      if (bytes == null) { setState(() => _hint = '读不到文件内容'); return }
+      final dir = await getTemporaryDirectory();
+      final src = File('${dir.path}/karaoke_src.wav');
+      await src.writeAsBytes(bytes, flush: true);
+      final dst = '${dir.path}/karaoke_out.wav';
+      final rc = JsbClient.instance.makeKaraoke(src.path, dst);
+      if (rc != 0) { setState(() => _hint = '没能受理（$rc）'); return }
+      setState(() => _hint = '正在生成伴奏（离屏跑，几十秒）…');
+      for (var i = 0; i < 240; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        final st = JsbClient.instance.karaokeStatus();
+        if (st.$1 == -2 || st.$1 == -1) continue;
+        if (st.$1 == 0) {
+          setState(() {
+            _hint = '伴奏已生成：${st.$2}';
+            _urlCtrl.text = st.$2;
+          });
+          await _diag('人声消除完成 ${st.$2}');
+        } else {
+          setState(() => _hint = '人声消除失败（${st.$1}）：${JsbClient.instance.lastError()}');
+          await _diag('人声消除失败 ${st.$1}');
+        }
+        return;
+      }
+      setState(() => _hint = '还在跑（超过 2 分钟），可以先去听歌');
+    } catch (e) {
+      setState(() => _hint = '选择/写入失败');
+    }
+  }
+
   Future<void> _pickAndPlay() async {
     setState(() => _hint = '正在打开文件选择器…');
     try {
@@ -339,6 +378,10 @@ class _DevPanelState extends State<DevPanel> {
                       OutlinedButton(
                         onPressed: _playTestTone,
                         child: const Text('本地测试音'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _makeKaraoke,
+                        child: const Text('[18] 生成伴奏'),
                       ),
                     ],
                   ),

@@ -201,7 +201,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 SwitchListTile(
-                  leading: const Icon(Icons.equalizer),
+                  secondary: const Icon(Icons.equalizer),
                   title: const Text('音效链'),
                   subtitle: const Text('31 段 EQ + 胆机/黑胶 + 8D 空间化'),
                   value: _dsp,

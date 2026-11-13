@@ -32,21 +32,21 @@
 | 3 | Rust | Tokio | UI 层高并发手势捕捉：防误触、长按震动判定 | `rust/gesture-tokio/` | `cargo build` | `libyieyu_gesture.so` |
 | 4 | Zig | Zig CC | 跨平台底层编译 + 内存分配器 | `zig/` | `zig build` | `libyieyu_mem.a` |
 | 5 | Go | Goroutine | 业务层高并发搜歌：同时打网易/QQ/酷狗 | `go/` | `gomobile bind` | `search.aar` |
-| 6 | TypeScript | Zod / Axios | JSON 解析与数据清洗 | `ts/` | `tsc` + `esbuild` | `dist/cleaner.mjs` |
+| 6 | TypeScript | Zod（构建期） | JSON 解析与数据清洗 + 生成 Dart 模型 | `ts/` | `tsc` + esbuild + gen-schema | `out/ts/cleaner.mjs` + `app/lib/model/song.dart` |
 | 7 | Lua | LuaJIT | 第三方音源脚本沙箱（落雪源） | `core/src/script/` + `lua/sources/` | CMake 静态链 | `libyieyu_core.so` 内 |
-| 8 | WebAssembly | WasmEdge | 跨端热更新插件：下发的音效包 | `core/src/wasm/` + `wasm/` | CMake + `cargo wasm32-wasip1` | `*.wasm` + `libwasmedge` |
-| 9 | C | libcurl | 最底层 TCP/Socket：拉音频流 | `core/src/net/stream_curl.c` | CMake 静态链 | `libyieyu_core.so` 内 |
+| 8 | WebAssembly | 自研 MVP 解释器 | 跨端热更新插件：下发的音效包 | `core/src/wasm/` + `tools/mkwasm.mjs` | CMake + node 生成器 | `assets/plugins/*.wasm` |
+| 9 | C | 自研 socket HTTP/1.1 | 最底层 TCP/Socket：拉音频流 | `core/src/net/stream_http.c` | CMake | `libyieyu_core.so` 内 |
 | 10 | Rust | ring | 密码学级验签：卡密、防抓包 | `rust/license-ring/` | `cargo build` | `libyieyu_license.so` |
-| 11 | C++ | Obfuscator-LLVM | 机器码混淆与防篡改 | `core/cmake/ObfuscatorLLVM.cmake` + `tools/ollvm/` | 自定义 NDK 工具链 | 混淆后的 `.so` |
+| 11 | 自研 | 符号重命名 + strip + sha256 | 机器码混淆与防篡改 | `tools/obfuscate.mjs` + `core/src/common/integrity.cpp` | 链接后处理 | 混淆后的 `.so` + `assets/integrity/` |
 | 12 | Assembly | ARM64 NEON | 核心加密比对指令（微秒级硬指令） | `asm/neon_ct_compare.S` | CMake ASM | `libyieyu_core.so` 内 |
-| 13 | C | FFmpeg（无预编译库时 **NDK mediandk** 兜底） | 解封装与解码：FLAC → PCM | `core/src/audio/demux_ffmpeg.c` + `core/src/audio/demux_platform.c` + `third_party/ffmpeg/` | CMake 预编译库 / NDK `mediandk` | `libavformat/libavcodec.so` 或系统解码器 |
-| 14 | C++ | **SpeexDSP** | 音频重采样：44.1k → 192k | `core/src/audio/resample_speex.cpp` | CMake（BSD-3，静态链） | `libyieyu_core.so` 内 |
+| 13 | C | NDK mediandk | 解封装与解码：FLAC → PCM | `core/src/audio/demux_platform.c` | CMake + 系统解码器 | 系统解码器（零额外 .so） |
+| 14 | C++ | 自研多相 FIR | 音频重采样：22.05k ↔ 192k | `core/src/audio/resampler.cpp` | CMake | `libyieyu_core.so` 内 |
 | 15 | C | AAudio | 把 PCM 喂给手机声卡 | `core/src/audio/aaudio_sink.c` | CMake + `libaaudio` | `libyieyu_core.so` 内 |
-| 16 | C++ | Eigen | DSD 转换的底层矩阵数学 | `core/src/audio/dsd_eigen.cpp` | header-only | 编进 core |
+| 16 | C++ | 自研 DSF/DFF 解码 | DSD → PCM（FIR÷8 + [14]） | `core/src/audio/dsd.cpp` | CMake | 编进 core |
 | 17 | C++ | 原生多线程池 | DSP 音效：31 段 EQ、胆机失真、黑胶 | `core/src/dsp/` | CMake 静态链 | `libyieyu_core.so` 内 |
-| 18 | Python | ONNX Runtime | 本地 AI 人声消除推理 | `python/` + `core/src/ai/onnx_vocals.cpp` | CMake + ORT `.so` | `libonnxruntime.so` + `*.onnx` |
-| 19 | Rust | SQLx | 本地数据库高速异步读写 | `rust/store-sqlx/` | `cargo build` | `libyieyu_store.so` |
-| 20 | C++ | SQLite | 最底层磁盘持久化 | `core/src/store/sqlite_kv.cpp` | CMake | `libsqlite3.a` |
+| 18 | C++ + Python | 自研 STFT 中置抑制 | 离线人声消除（生成伴奏） | `python/vocal_remover/design.py` + `core/src/ai/vocals.cpp` | Python 生成核 → CMake | 编进 core |
+| 19 | Rust | Tokio 自研只读库 | 本地库高速异步只读 | `rust/store-read/` | `cargo build` | `libyieyu_store.so` |
+| 20 | C++ | 自研追加日志 KV | 最底层磁盘持久化（唯一写者） | `core/src/store/kv_store.cpp` | CMake | 编进 core |
 | 21 | C++ | FlatBuffers | 跨语言二进制打包（零拷贝） | `idl/*.fbs` + `core/src/ipc/` | `flatc` codegen | `gen/{cpp,dart,rust,go}/` |
 | 22 | Kotlin | Service | 前台服务保活（通知栏） | `android/platform-service/` | Gradle 模块 | `platform-service.aar` |
 | 23 | C/C++ | NDK ASensor | 绕过 Java 直接读陀螺仪，驱动 8D | `core/src/sensor/gyro_asensor.cpp` | CMake + `libandroid` | `libyieyu_core.so` 内 |

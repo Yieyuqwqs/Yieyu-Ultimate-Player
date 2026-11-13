@@ -12,6 +12,8 @@
     Yieyu_SetDsp; Yieyu_SetEqGain; Yieyu_SetTone; Yieyu_SetRate;
     /* [9] 自研取流自检 */
     Yieyu_HttpProbe;
+    /* [18] 离线人声消除 */
+    Yieyu_MakeKaraoke; Yieyu_KaraokeStatus;
     /* [5] 搜歌 / 点歌（Go 网络 + 内部 URI → 真直链） */
     Yieyu_Search; Yieyu_PlaySong;
     /* 黑匣子：导出日志（UI 只调这两个，不展示内容） */

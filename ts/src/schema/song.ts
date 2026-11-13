@@ -35,6 +35,23 @@ export const SongSchema = z.object({
 
 export type Song = z.infer<typeof SongSchema>
 
+/**
+ * 字段清单：**跨语言生成的唯一来源**。tools/gen-schema.mjs 读它生成
+ *   · app/lib/model/song.dart（Dart 侧模型）
+ * 改字段只改上面那个 Zod schema + 这里，两边不会再各写一份。
+ * 每项：[Dart 名, JSON 键, 类型]
+ */
+export const SONG_FIELDS: ReadonlyArray<readonly [string, string, 'string' | 'int']> = [
+  ['id', 'id', 'string'],
+  ['source', 'source', 'string'],
+  ['title', 'name', 'string'],      // 源站字段叫 name，网络层统一成 title
+  ['artist', 'artist', 'string'],
+  ['album', 'album', 'string'],
+  ['durationMs', 'durationMs', 'int'],
+  ['quality', 'quality', 'string'],
+  ['mid', 'mid', 'string'],
+]
+
 export const SearchPayloadSchema = z.object({
   traces: z
     .array(

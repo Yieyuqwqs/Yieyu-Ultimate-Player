@@ -133,7 +133,7 @@ class _StagePainter extends CustomPainter {
 
     // 背景网格（极淡，只做视觉锚点）
     final grid = Paint()
-      ..color = surface.withValues(alpha: 0.35)
+      ..color = surface.withOpacity(0.35)
       ..strokeWidth = 1;
     for (var i = 1; i < 4; i++) {
       final y = mid - amp + amp * 2 * i / 4;
@@ -172,7 +172,7 @@ class _StagePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [accent.withValues(alpha: 0.55 * glow + 0.08), accent.withValues(alpha: 0.02)],
+          colors: [accent.withOpacity(0.55 * glow + 0.08), accent.withOpacity(0.02)],
         ).createShader(Rect.fromLTWH(0, mid - amp, w, amp * 2)),
     );
 
@@ -183,11 +183,11 @@ class _StagePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0
         ..strokeCap = StrokeCap.round
-        ..color = accent.withValues(alpha: 0.55 + 0.45 * glow),
+        ..color = accent.withOpacity(0.55 + 0.45 * glow),
     );
 
     // 峰值点 + 呼吸环
-    final dot = Paint()..color = accent.withValues(alpha: 0.9);
+    final dot = Paint()..color = accent.withOpacity(0.9);
     for (var i = 0; i < pts.length; i += 5) {
       canvas.drawCircle(pts[i], 1.6 + 1.2 * energy, dot);
     }
@@ -198,7 +198,7 @@ class _StagePainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2
-        ..color = accent.withValues(alpha: 0.25 + 0.35 * energy),
+        ..color = accent.withOpacity(0.25 + 0.35 * energy),
     );
   }
 

@@ -44,7 +44,7 @@ class _ModulesPageState extends State<ModulesPage> {
   }
 
   void _refresh() {
-    final s = JsbClient.instance.statsText();
+    final s = JsbClient.instance.statsLine();
     if (!mounted) return;
     setState(() {
       _stats = s;
@@ -66,7 +66,7 @@ class _ModulesPageState extends State<ModulesPage> {
   Future<void> _runHttpProbe() async {
     // 用一个明确返回 JSON 的公共地址做自检；失败也只影响这一行
     final rc = JsbClient.instance.httpProbe('http://www.gstatic.com/generate_204');
-    final info = JsbClient.instance.lastError;
+    final info = JsbClient.instance.lastError();
     if (!mounted) return;
     setState(() {
       _httpStatus = rc;

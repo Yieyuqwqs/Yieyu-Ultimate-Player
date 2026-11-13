@@ -45,6 +45,7 @@ class _BootstrapperState extends State<_Bootstrapper> {
       } else {
         JsbClient.instance.startPump();
         await _verifyIntegrity();
+        await _installBuiltinScripts();
       }
       BootLog.instance.write('boot ok, abi=${Abi.current()}');
     } catch (e) {
@@ -53,6 +54,24 @@ class _BootstrapperState extends State<_Bootstrapper> {
     } finally {
       if (mounted) setState(() => _ready = true);
     }
+  }
+
+  /// [7] 随包脚本：脚本目录里一个都没有时，把 assets/scripts/*.lua 导进去。
+  /// 这样新装 App 也有一个能用的音源，不用先去找 .lua 文件手动导入。
+  Future<void> _installBuiltinScripts() async {
+    try {
+      final r = JsbClient.instance.reloadScripts();
+      if (r != null && r.$1 > 0) return;              // 已经有脚本了，不动
+      for (final name in const <String>['wy.lua']) {
+        try {
+          final bytes = await rootBundle.load('assets/scripts/$name');
+          JsbClient.instance.importScript(name, bytes.buffer.asUint8List());
+        } catch (_) {
+          // 资产缺失（本地 dev）不是错误
+        }
+      }
+      JsbClient.instance.reloadScripts();
+    } catch (_) {}
   }
 
   /// [11] 防篡改：资产里的期望摘要 vs 磁盘上 so 的真实摘要。

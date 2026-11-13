@@ -216,7 +216,7 @@ jobs:
           NM=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
           SO=out/native/arm64/libyieyu_core.so
           ls -lh $SO
-          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts Yieyu_ImportScript Yieyu_PlayUrl Yieyu_ScriptCall Yieyu_Search Yieyu_PlaySong Yieyu_SetRate Yieyu_HttpProbe Yieyu_IntegrityCheck Yieyu_SelfDigest Yieyu_KvCount Yieyu_StoreCount; do
+          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts Yieyu_ImportScript Yieyu_PlayUrl Yieyu_ScriptCall Yieyu_Search Yieyu_PlaySong Yieyu_SetRate Yieyu_HttpProbe Yieyu_MakeKaraoke Yieyu_KaraokeStatus Yieyu_IntegrityCheck Yieyu_SelfDigest Yieyu_KvCount Yieyu_StoreCount; do
             $NM -D --defined-only $SO | grep -q " $sym\$" || { echo "缺导出: $sym" >&2; exit 1; }
           done
           echo "导出面 OK"
