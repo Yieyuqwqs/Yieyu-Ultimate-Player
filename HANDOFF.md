@@ -152,6 +152,38 @@ JSB 新增 `Yieyu_SetDsp(on)` / `Yieyu_SetEqGain(band, db)` / `Yieyu_SetTone(tub
 
 ---
 
+### 2.9 Lua 脚本规约（2026-11-13 傍晚，run #55 起）
+
+#### 网络函数（白名单里就这些）
+| 名字 | 语义 | 返回 |
+|---|---|---|
+| `http_get(url[, headers])` | GET | `body, status` |
+| `http_post(url, body \| headers, …)` | POST，**两种参数顺序都吃** | `body, status` |
+| `request(arg)` / `fetch(url[, …])` | 同 GET；`request{url=,method=,body=,headers=}` 表形式也支持 | `body, status` |
+| `http.get/post/request` | 同上（表形式别名） | `body, status` |
+| `json.decode/encode` | 自研实现（Lua 5.1 兼容） | — |
+
+**三个必须记住的点（都是踩过的）**：
+1. `http_post` 的 headers 可以是 **Lua 表**（`{["X-Api-Key"]="…"}`），也可以是一行一行的 `"K: V"` 字符串；
+2. **第二个返回值是 HTTP 状态码**（网络层失败 = 0）。脚本写 `local body, code = http_post(...)`、
+   `if code ~= 200 then return nil end` 才能正常工作 —— 老实现只回 body，code 是 nil，判断永远成立；
+3. Go 侧出口是 `yieyu_fetch_ex(url, method, body, headers, outLen, outStatus)`（`yieyu_fetch` 旧签名保留）。
+
+#### 沙箱边界
+- 删掉：`io` / `package` / `loadfile` / `dofile`（`require` 随之失效）；
+- `os` **保留**，只砍 `execute/exit/remove/rename/tmpname/getenv/setlocale` → `os.time()`、`os.date()` 可用；
+- 静态黑名单（导入时就拦）：`os.execute/os.exit/io.open/io.write/package.loadlib/debug.sethook/require(/dofile(/loadfile(`；
+- 指令计数上限 5000 万条/次，超了软掐，不会把 App 拖死。
+
+#### 文件路径规约
+- **导入**：Flutter 只把**字节**交给 `Yieyu_ImportScript(name, bytes, len)` —— 系统选择器给的
+  `content://` 只是个句柄，C++ 读不到，所以永远不要传 URI 下去；
+- **播放本地文件**：开发者面板「选本地音频」→ 选择器读字节 → **写进 App 私有缓存** → 把**绝对路径**交给
+  `Yieyu_PlayUrl`；
+- 脚本目录：公共目录可写就写公共（用户能直接放），否则落 `<filesDir>/yieyu/scripts`；重载时两处都扫。
+
+---
+
 ---
 
 ## 3. 本机工具脚本（都在 `~/work/up/`）
