@@ -99,7 +99,7 @@
 
 ---
 
-## 三、踩坑台账（20 条，全部真报错 + 真修法）
+## 三、踩坑台账（22 条，全部真报错 + 真修法）
 
 ### A. 交付链路
 
@@ -135,6 +135,13 @@
 | 18 | 装机后任何网络都失败（音源直链放不出来、Lua 的 `http_get` 返回空） | `flutter create` 只在 **debug/profile** 壳子里加 `INTERNET`，release 的 main manifest 没有 | `app/patch_manifest.mjs` 注入 `INTERNET` + `ACCESS_NETWORK_STATE` |
 | 19 | 装机没声音、日志里 `AAudio 全部打开失败` | 真机上 `AAUDIO_SHARING_MODE_EXCLUSIVE` 常被拒（非系统 App） | 独占+burst → 独占 → 共享+burst → 共享 **四级降级**，全失败才算失败 |
 | 20 | 出来的声音是噪声/爆音 | `AMediaCodec` 输出可能是 16bit 也可能是 float，且**只有收到 format-changed 后** `pcm-encoding` 才可信 | 默认按 16bit 处理，收到 format-changed 再改；mono 复制成两路，>2 声道只取前两路 |
+
+### E. Dart 侧（写测试音时踩的）
+
+| # | 报错 | 根因 | 修法 |
+|---|---|---|---|
+| 21 | `The argument type 'bool' can't be assigned to the parameter type 'Endian'` | `ByteData.setInt16(off, val, endian)` 第三个参数是 `Endian`，不是"要不要小端"的 bool | 传 `Endian.little`（`dart:typed_data` 自带） |
+| 22 | `'AMEDIAFORMAT_KEY_PCM_ENCODING' is unavailable: introduced in Android 28` | NDK 给这个 key 加了 `__INTRODUCED_IN(28)`，而 minSdk=26 | 用自己的字面量常量 `"pcm-encoding"`（key 的字符串值自 API 21 起就稳定） |
 
 ### B2. 脚本热更链路（2026-11-13 晚补）
 
