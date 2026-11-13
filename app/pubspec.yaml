@@ -17,6 +17,8 @@ dependencies:
   # [21] FlatBuffers 的 Dart 运行时（生成代码在 lib/jsb/jsb_ops.dart）
   flat_buffers: ^23.5.26
   path_provider: ^2.1.4
+  # SAF 原生文件选择器：导入 .lua 脚本（模块 7 热更入口）
+  file_picker: ^8.1.7
 
 dev_dependencies:
   flutter_test:

@@ -14,6 +14,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -40,6 +43,7 @@ jobs:
 
       - name: 0.1 兜底可执行位
         run: chmod +x build.sh core/build-native.sh app/build-app.sh go/build-aar.sh
+          chmod +x app/patch_manifest.mjs app/patch_gradle.mjs tools/make-patch.mjs
 
       - name: 0.2 变更检测（决定编哪些模块）
         id: chg
@@ -178,7 +182,7 @@ jobs:
           NM=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm
           SO=out/native/arm64/libyieyu_core.so
           ls -lh $SO
-          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts; do
+          for sym in Yieyu_Init Yieyu_Post Yieyu_Poll Yieyu_Snapshot_Get Yieyu_Version Yieyu_ExportLogs Yieyu_ReloadScripts Yieyu_ImportScript; do
             $NM -D --defined-only $SO | grep -q " $sym\$" || { echo "缺导出: $sym" >&2; exit 1; }
           done
           echo "导出面 OK"

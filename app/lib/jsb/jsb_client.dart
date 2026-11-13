@@ -74,6 +74,8 @@ typedef _ExportNative = Int32 Function(Pointer<Utf8>, IntPtr);
 typedef _ExportDart = int Function(Pointer<Utf8>, int);
 typedef _ReloadNative = Int32 Function(Pointer<Int32>, Pointer<Int32>);
 typedef _ReloadDart = int Function(Pointer<Int32>, Pointer<Int32>);
+typedef _ImportNative = Int32 Function(Pointer<Utf8>, Pointer<Uint8>, Int32);
+typedef _ImportDart = int Function(Pointer<Utf8>, Pointer<Uint8>, int);
 typedef _IsPublicNative = Int32 Function();
 typedef _IsPublicDart = int Function();
 typedef _ShutdownNative = Void Function();
@@ -103,6 +105,8 @@ class JsbClient {
       _lib.lookupFunction<_ExportNative, _ExportDart>('Yieyu_ExportLogs');
   late final _ReloadDart _reload =
       _lib.lookupFunction<_ReloadNative, _ReloadDart>('Yieyu_ReloadScripts');
+  late final _ImportDart _import =
+      _lib.lookupFunction<_ImportNative, _ImportDart>('Yieyu_ImportScript');
   late final _IsPublicDart _logIsPublic =
       _lib.lookupFunction<_IsPublicNative, _IsPublicDart>('Yieyu_LogIsPublic');
 
@@ -183,6 +187,22 @@ class JsbClient {
     } catch (_) {
       return null;
     } finally {
+      malloc.free(buf);
+    }
+  }
+
+  /// 导入一个 .lua 脚本（SAF 选完直接喂字节，用户不用碰存储路径）。
+  /// 返回 0=成功；-1 参数错；-2 触发沙箱黑名单；-3 写盘失败；-4 超过 512KB。
+  int importScript(String name, Uint8List bytes) {
+    final n = name.toNativeUtf8();
+    final buf = malloc.allocate<Uint8>(bytes.length);
+    try {
+      buf.asTypedList(bytes.length).setAll(0, bytes);
+      return _import(n, buf, bytes.length);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(n);
       malloc.free(buf);
     }
   }

@@ -9,6 +9,22 @@ cd "$HERE"
 # 1.5) 黑匣子要写 /storage/emulated/0/yieyu → 注入存储权限（幂等）
 node patch_manifest.mjs || true
 # 1.55) 干掉 ndkVersion 钉死 + 打开 gradle build cache（省掉 ~1GB NDK 下载）
+# 1.57) 固定签名：让每次出的 APK 签名一致，可直接覆盖安装
+STORE_PASS='yieyu2026'
+KEY_PASS='yieyu2026'
+if [[ -f "$HERE/signing/yieyu.jks.b64" ]]; then
+  base64 -d "$HERE/signing/yieyu.jks.b64" > android/app/yieyu.jks
+  cat > android/key.properties <<KEOF
+storePassword=$STORE_PASS
+keyPassword=$KEY_PASS
+keyAlias=yieyu
+storeFile=yieyu.jks
+KEOF
+  echo "→ 固定签名已就位（yieyu.jks）"
+else
+  echo "⚠ 没有 app/signing/yieyu.jks.b64，本次将用 debug 签名（无法覆盖安装旧包）"
+fi
+
 node patch_gradle.mjs || true
 
 # 1.6) R8 规则：保住 JNI 名字（Flutter release 会跑 R8 裁 Java/Kotlin 层）

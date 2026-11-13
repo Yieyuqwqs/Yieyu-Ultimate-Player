@@ -64,4 +64,9 @@ YIEYU_API void Yieyu_SetTrace(const char* traceId);
 // loaded/rejected 可传 NULL。返回 0=完成。
 YIEYU_API int Yieyu_ReloadScripts(int* loaded, int* rejected);
 
+// 界面导入（SAF 选完文件后直接喂字节，不需要用户去翻存储路径）：
+//   name 以 .lua 结尾；data/len 是文件内容；写入私有目录后立刻注册进沙箱。
+//   返回 0=成功，-1=参数错，-2=触发黑名单，-3=写盘失败，-4=超限(>512KB)
+YIEYU_API int Yieyu_ImportScript(const char* name, const uint8_t* data, int len);
+
 }

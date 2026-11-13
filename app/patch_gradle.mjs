@@ -61,5 +61,55 @@ function patchGradleProperties() {
   }
 }
 
+function patchSigning() {
+  const dir = path.join(androidDir, 'app')
+  for (const name of ['build.gradle', 'build.gradle.kts']) {
+    const p = path.join(dir, name)
+    if (!fs.existsSync(p)) continue
+    let s = fs.readFileSync(p, 'utf8')
+    const before = s
+
+    if (name.endsWith('.kts')) {
+      // Kotlin DSL 壳子（Flutter 3.29+ 才会用），保守处理：不动
+      continue
+    }
+
+    // ① 顶部读 key.properties
+    if (!s.includes('keystoreProperties')) {
+      const header = [
+        'def keystoreProperties = new Properties()',
+        "def keystorePropertiesFile = rootProject.file('key.properties')",
+        'if (keystorePropertiesFile.exists()) {',
+        '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))',
+        '}',
+        '',
+      ].join('\n')
+      s = header + s
+    }
+
+    // ② android {} 里加 signingConfigs
+    if (!s.includes('signingConfigs')) {
+      s = s.replace(/android\s*\{/, (m) => m + `
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+            storePassword keystoreProperties['storePassword']
+        }
+    }`)
+    }
+
+    // ③ release 用我们的签名
+    s = s.replace(/signingConfig\s*=?\s*signingConfigs\.debug/g, 'signingConfig = signingConfigs.release')
+
+    if (s !== before) {
+      fs.writeFileSync(p, s)
+      console.log('  ✓ 已接入固定签名：' + name)
+    }
+  }
+}
+
 patchBuildGradle()
+patchSigning()
 patchGradleProperties()

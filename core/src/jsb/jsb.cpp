@@ -6,6 +6,8 @@
 #include "../pipeline/engine.h"
 #include "../common/blackbox.h"
 #include "../script/lua_sandbox.h"
+#include <cstdlib>
+#include <sys/stat.h>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -68,6 +70,42 @@ int Yieyu_LogDir(char* outDir, size_t cap) {
 }
 int Yieyu_LogIsPublic(void) { return bb_is_public(); }
 void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
+
+int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
+  if (!name || !data || len <= 0) return -1;
+  const size_t nlen = std::strlen(name);
+  if (nlen < 5 || std::strcmp(name + nlen - 4, ".lua") != 0) return -1;
+  if (len > 512 * 1024) return -4;
+
+  // 黑名单静态检查（与 tools/collect-lua.mjs、lua_sandbox.cpp 同源）
+  static const char* kBan[] = {"os.execute", "os.exit", "io.open", "io.write",
+                               "package.loadlib", "debug.sethook", "require(", "dofile(", "loadfile("};
+  for (const char* b : kBan) {
+    if (std::strstr((const char*)data, b) != nullptr) {
+      bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入脚本 %s：触发沙箱黑名单 %s", name, b);
+      return -2;
+    }
+  }
+
+  char dir[600], path[700];
+  std::snprintf(dir, sizeof(dir), "%s/scripts", bb_dir());
+  std::snprintf(path, sizeof(path), "%s/%s", dir, name);
+  // 目录逐级建（私有目录一定可写；公共目录不可写时 bb_dir 已经降级过了）
+  ::mkdir(dir, 0770);
+
+  FILE* f = std::fopen(path, "wb");
+  if (!f) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本写盘失败：%s", path);
+    return -3;
+  }
+  const size_t wrote = std::fwrite(data, 1, (size_t)len, f);
+  std::fclose(f);
+  if (wrote != (size_t)len) return -3;
+
+  int loaded = 0, rejected = 0;
+  lua_sandbox_reload(dir, &loaded, &rejected);
+  return (rejected > 0 && loaded == 0) ? -2 : 0;
+}
 
 int Yieyu_ReloadScripts(int* loaded, int* rejected) {
   // 目录跟着黑匣子走：公共目录可用就用公共目录，否则用私有目录
