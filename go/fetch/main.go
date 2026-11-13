@@ -6,8 +6,12 @@
 //   交叉编译零外部依赖 —— 这是这套架构里最省事也最稳的一条路。
 //
 // 给 Lua 沙箱（模块 7）的契约：
-//   char* yieyu_fetch(url, method, body, headers, int* outLen)
+//   char* yieyu_fetch(url, method, body, headers, int* outLen)                    ← 旧
+//   char* yieyu_fetch_ex(url, method, body, headers, int* outLen, int* outStatus)  ← 带状态码
 //   void  yieyu_fetch_free(char* p)
+//
+// ★ 为什么要 ex：脚本判断成败靠的是 HTTP 状态码（`local body, code = http_post(...)`），
+//   旧签名只回 body，脚本里 `if code ~= 200 then return nil end` 永远成立 → 永远拿不到 URL。
 // 返回的是 C 堆内存（C.CString），调用方必须用 yieyu_fetch_free 释放。
 package main
 
@@ -41,10 +45,13 @@ var client = &http.Client{
 	},
 }
 
-//export yieyu_fetch
-func yieyu_fetch(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char, outLen *C.int) *C.char {
+// doFetch 是唯一实现：body + HTTP 状态码（网络层失败时 status = 0）
+func doFetch(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char, outLen *C.int, outStatus *C.int) *C.char {
 	if outLen != nil {
 		*outLen = 0
+	}
+	if outStatus != nil {
+		*outStatus = 0
 	}
 	url := C.GoString(curl)
 	if url == "" {
@@ -82,6 +89,9 @@ func yieyu_fetch(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char,
 		return nil
 	}
 	defer resp.Body.Close()
+	if outStatus != nil {
+		*outStatus = C.int(resp.StatusCode)
+	}
 
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
@@ -92,6 +102,16 @@ func yieyu_fetch(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char,
 	}
 	// 注意：C.CString 会复制并在末尾补 \0，正好给 C++ 侧当字符串用
 	return C.CString(string(buf))
+}
+
+//export yieyu_fetch
+func yieyu_fetch(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char, outLen *C.int) *C.char {
+	return doFetch(curl, cmethod, cbody, cheaders, outLen, nil)
+}
+
+//export yieyu_fetch_ex
+func yieyu_fetch_ex(curl *C.char, cmethod *C.char, cbody *C.char, cheaders *C.char, outLen *C.int, outStatus *C.int) *C.char {
+	return doFetch(curl, cmethod, cbody, cheaders, outLen, outStatus)
 }
 
 //export yieyu_fetch_free

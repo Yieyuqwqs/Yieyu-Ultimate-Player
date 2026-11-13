@@ -23,8 +23,8 @@
 
 namespace {
 constexpr int kMaxScripts = 32;
-char  g_names[kMaxScripts][64];
-char  g_dir[512] = {0};
+char  g_names[kMaxScripts][96];
+char  g_paths[kMaxScripts][700];   // 绝对路径（脚本可能在公共目录，也可能在私有目录）
 int   g_count = 0;
 
 // 与 tools/collect-lua.mjs 保持同一份黑名单（两边不一致就是事故）
@@ -82,6 +82,7 @@ int scan_dir(const char* dir, int* loaded, int* rejected) {
     }
     if (g_count < kMaxScripts) {
       snprintf(g_names[g_count], sizeof(g_names[0]), "%s", nm);
+      snprintf(g_paths[g_count], sizeof(g_paths[0]), "%s", full);
       g_count++;
       if (loaded) (*loaded)++;
     } else if (rejected) {
@@ -97,7 +98,6 @@ extern "C" int lua_sandbox_reload(const char* dir, int* loaded, int* rejected) {
   if (loaded) *loaded = 0;
   if (rejected) *rejected = 0;
   if (!dir || !*dir) return -1;
-  snprintf(g_dir, sizeof(g_dir), "%s", dir);
   g_count = 0;
   return scan_dir(dir, loaded, rejected);
 }
@@ -137,30 +137,121 @@ void  yieyu_fetch_free(char* p);
 }
 #endif
 
+#ifdef YIEYU_HAVE_FETCH
+extern "C" {
+char* yieyu_fetch_ex(const char* url, const char* method, const char* body,
+                     const char* headers, int* outLen, int* outStatus);
+}
+#endif
+
+// 把 Lua 的 headers 表拼成 "K: V\n"（和 Go 侧的解析约定一致）
+static void headers_to_text(lua_State* L, int idx, char* out, size_t cap) {
+  out[0] = 0;
+  if (!lua_istable(L, idx)) return;
+  size_t used = 0;
+  lua_pushnil(L);
+  while (lua_next(L, idx) != 0) {
+    // key 在 -2，value 在 -1
+    char line[256];
+    const char* k = lua_tostring(L, -2);
+    const char* v = lua_tostring(L, -1);
+    if (k && v) {
+      snprintf(line, sizeof(line), "%s: %s\n", k, v);
+      const size_t n = strlen(line);
+      if (used + n + 1 < cap) { memcpy(out + used, line, n); used += n; out[used] = 0; }
+    }
+    lua_pop(L, 1);   // 弹掉 value，保留 key 给下一次 next
+  }
+}
+
+// 统一网络出口。参数顺序容忍两种写法（脚本生态里两种都有）：
+//   http_post(url, body, headers)     ← 我们自己文档里的
+//   http_post(url, headers, body)     ← 落雪脚本里常见的
+// 返回 (body, status)：**status 必须有**，否则脚本的 `if code ~= 200` 永远成立。
 static int l_http(lua_State* L) {
+  const int defPost = (int)lua_tointeger(L, lua_upvalueindex(1));
+
+  // request({url=..., method=..., body=..., headers={...}}) 这种表形式
+  if (lua_istable(L, 1)) {
+    lua_getfield(L, 1, "url");
+    const char* u = lua_tostring(L, -1);
+    if (!u) { lua_pop(L, 1); lua_pushstring(L, ""); lua_pushinteger(L, 0); return 2; }
+    char urlbuf[2048];
+    snprintf(urlbuf, sizeof(urlbuf), "%s", u);
+    lua_pop(L, 1);
+
+    char hdr[2048] = {0};
+    char body[4096] = {0};
+    lua_getfield(L, 1, "headers");
+    headers_to_text(L, lua_gettop(L), hdr, sizeof(hdr));
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "body");
+    if (const char* b = lua_tostring(L, -1)) snprintf(body, sizeof(body), "%s", b);
+    lua_pop(L, 1);
+
+    char method[16] = {0};
+    lua_getfield(L, 1, "method");
+    if (const char* m = lua_tostring(L, -1)) snprintf(method, sizeof(method), "%s", m);
+    lua_pop(L, 1);
+
+    if (strncmp(urlbuf, "http://", 7) != 0 && strncmp(urlbuf, "https://", 8) != 0) {
+      lua_pushstring(L, "");
+      lua_pushinteger(L, 0);
+      return 2;
+    }
+#ifdef YIEYU_HAVE_FETCH
+    int outLen = 0, status = 0;
+    const char* m = method[0] ? method : (defPost ? "POST" : "GET");
+    char* resp = yieyu_fetch_ex(urlbuf, m, body, hdr, &outLen, &status);
+    if (resp) { lua_pushlstring(L, resp, (size_t)outLen); yieyu_fetch_free(resp); }
+    else lua_pushstring(L, "");
+    lua_pushinteger(L, status);
+    return 2;
+#else
+    lua_pushstring(L, "");
+    lua_pushinteger(L, 0);
+    return 2;
+#endif
+  }
+
   const char* url = luaL_checkstring(L, 1);
-  const char* body = lua_isnoneornil(L, 2) ? "" : luaL_checkstring(L, 2);
   if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
     return luaL_error(L, "scheme not allowed");
   }
-  // http.post 这类调用允许第 3 个参数是 headers
-  const char* headers = lua_isnoneornil(L, 3) ? "" : luaL_checkstring(L, 3);
-  const bool isPost = !lua_isnoneornil(L, 2);
 
-#ifdef YIEYU_HAVE_FETCH
-  int outLen = 0;
-  char* resp = yieyu_fetch(url, isPost ? "POST" : "GET", body, headers, &outLen);
-  if (resp) {
-    lua_pushlstring(L, resp, (size_t)outLen);
-    yieyu_fetch_free(resp);
-    return 1;
+  // 第 2/3 个参数：一个可能是 body 字符串，一个可能是 headers 表（或 "K: V" 字符串）
+  char body[8192] = {0};
+  char hdr[2048] = {0};
+  bool hasBody = false;
+  for (int i = 2; i <= 3; ++i) {
+    const int t = lua_type(L, i);
+    if (t == LUA_TTABLE) {
+      headers_to_text(L, i, hdr, sizeof(hdr));
+    } else if (t == LUA_TSTRING) {
+      const char* sv = lua_tostring(L, i);
+      // "K: V" 形态当成 headers（老式两参调用 http_post(url, "K: V")）
+      if (!hasBody && strchr(sv, ':') != nullptr && strchr(sv, '\n') != nullptr) {
+        snprintf(hdr, sizeof(hdr), "%s", sv);
+      } else if (!hasBody) {
+        snprintf(body, sizeof(body), "%s", sv);
+        hasBody = true;
+      }
+    }
   }
-  lua_pushstring(L, "");                    // 网络失败：给空串，脚本自行判断
-  return 1;
+
+  const char* method = defPost ? "POST" : "GET";
+#ifdef YIEYU_HAVE_FETCH
+  int outLen = 0, status = 0;
+  char* resp = yieyu_fetch_ex(url, method, body, hdr, &outLen, &status);
+  if (resp) { lua_pushlstring(L, resp, (size_t)outLen); yieyu_fetch_free(resp); }
+  else lua_pushstring(L, "");
+  lua_pushinteger(L, status);
+  return 2;
 #else
-  (void)body; (void)headers; (void)isPost;
+  (void)method;
   lua_pushstring(L, "");
-  return 1;
+  lua_pushinteger(L, 0);
+  return 2;
 #endif
 }
 // 注意：LuaJIT 是 Lua 5.1，没有 luaL_tolstring（5.2+ 才有）。
@@ -386,16 +477,17 @@ int l_json_encode(lua_State* L) { jenc(L, 1, 0); return 1; }
 
 void register_api(lua_State* L) {
   // 别名：不同脚本写法不同，全部指到同一个出口
-  lua_register(L, "http_get", l_http);
-  lua_register(L, "http_post", l_http);
-  lua_register(L, "request", l_http);
-  lua_register(L, "fetch", l_http);
+  // 默认方法用 upvalue 传进去：0=GET 1=POST
+  lua_pushinteger(L, 0); lua_pushcclosure(L, l_http, 1); lua_setglobal(L, "http_get");
+  lua_pushinteger(L, 1); lua_pushcclosure(L, l_http, 1); lua_setglobal(L, "http_post");
+  lua_pushinteger(L, 0); lua_pushcclosure(L, l_http, 1); lua_setglobal(L, "request");
+  lua_pushinteger(L, 0); lua_pushcclosure(L, l_http, 1); lua_setglobal(L, "fetch");
   lua_register(L, "log", l_log);
 
   lua_newtable(L);
-  lua_pushcfunction(L, l_http); lua_setfield(L, -2, "get");
-  lua_pushcfunction(L, l_http); lua_setfield(L, -2, "post");
-  lua_pushcfunction(L, l_http); lua_setfield(L, -2, "request");
+  lua_pushinteger(L, 0); lua_pushcclosure(L, l_http, 1); lua_setfield(L, -2, "get");
+  lua_pushinteger(L, 1); lua_pushcclosure(L, l_http, 1); lua_setfield(L, -2, "post");
+  lua_pushinteger(L, 0); lua_pushcclosure(L, l_http, 1); lua_setfield(L, -2, "request");
   lua_setglobal(L, "http");
 
   // json 表（脚本一直在用，之前根本没有）
@@ -412,7 +504,13 @@ extern "C" int lua_sandbox_init(const char*) {
   luaL_openlibs(g_L);
   // 拆危险库
   lua_pushnil(g_L); lua_setglobal(g_L, "io");
-  lua_pushnil(g_L); lua_setglobal(g_L, "os");
+  // os：只砍危险成员，保留 time/date/clock/difftime（脚本算日期/签名要用）
+  lua_getglobal(g_L, "os");
+  if (lua_istable(g_L, -1)) {
+    static const char* kOsBan[] = {"execute", "exit", "remove", "rename", "tmpname", "getenv", "setlocale"};
+    for (const char* f : kOsBan) { lua_pushnil(g_L); lua_setfield(g_L, -2, f); }
+  }
+  lua_pop(g_L, 1);
   lua_pushnil(g_L); lua_setglobal(g_L, "package");
   lua_pushnil(g_L); lua_setglobal(g_L, "loadfile");
   lua_pushnil(g_L); lua_setglobal(g_L, "dofile");
@@ -425,8 +523,15 @@ extern "C" void lua_sandbox_set_limit(uint64_t i) { g_limit = i ? i : 50000000ul
 
 extern "C" int lua_sandbox_run(const char* name, const char* input, char* out, int cap) {
   if (!g_L || !name) return -1;
-  char full[700];
-  snprintf(full, sizeof(full), "%s/%s", g_dir, name);
+  // 按名字找登记过的绝对路径（脚本可能在公共目录，也可能在私有目录）
+  char full[700] = {0};
+  for (int i = 0; i < g_count; ++i) {
+    if (strcmp(g_names[i], name) == 0) { snprintf(full, sizeof(full), "%s", g_paths[i]); break; }
+  }
+  if (!full[0]) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本未登记：%s（先 reload）", name);
+    return -1;
+  }
   g_used = 0;
   lua_pushstring(g_L, input ? input : "");
   lua_setglobal(g_L, "input");

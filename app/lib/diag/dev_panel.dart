@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -133,6 +134,39 @@ class _DevPanelState extends State<DevPanel> {
     } catch (_) {}
   }
 
+  /// 选本地音频：系统选择器只保证「能读到字节」（content:// 也只是个句柄），
+  /// 所以这里**先落进 App 私有缓存**再把绝对路径交给 C++ —— 原生侧只认真实路径。
+  Future<void> _pickAndPlay() async {
+    setState(() => _hint = '正在打开文件选择器…');
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+      if (picked == null || picked.files.isEmpty) {
+        setState(() => _hint = '已取消');
+        return;
+      }
+      final f = picked.files.single;
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
+      if (bytes == null) {
+        setState(() => _hint = '读不到文件内容');
+        await _diag('选本地音频：读到空内容 name=${f.name}');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final out = File('${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}.bin');
+      await out.writeAsBytes(bytes, flush: true);
+      final rc = JsbClient.instance.playUrl(out.path);
+      setState(() {
+        _hint = rc == 0 ? '已提交：${out.path}' : '未能受理（$rc）';
+        _urlCtrl.text = out.path;
+      });
+      await _diag('选本地音频 name=${f.name} size=${bytes.length} rc=$rc path=${out.path}');
+    } catch (e) {
+      setState(() => _hint = '选择/写入失败');
+      await _diag('选本地音频异常 $e');
+    }
+  }
+
   Future<void> _importByPath() async {
     final p = _pathCtrl.text.trim();
     if (p.isEmpty) {
@@ -212,6 +246,10 @@ class _DevPanelState extends State<DevPanel> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      OutlinedButton(
+                        onPressed: _pickAndPlay,
+                        child: const Text('选本地音频'),
+                      ),
                       FilledButton(onPressed: _play, child: const Text('播放')),
                       OutlinedButton(
                         onPressed: () => JsbClient.instance.pause(),
