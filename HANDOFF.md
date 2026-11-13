@@ -1,6 +1,6 @@
 # HANDOFF · 接手必读（更新于 2026-11-13 深夜）
 
-> 一句话：**24 模块骨架 + 全链路云端构建全部打通（run #45 绿）**，
+> 一句话：**24 模块骨架 + 全链路云端构建全部打通（run #47 绿，11m43s）**，
 > 但**播放链路仍是空实现**，`libyieyu_core.so` 在真机上的加载状态**待确认**（见 §2）。
 
 ---
@@ -35,7 +35,7 @@
 
 ### 2.1 构建：绿
 
-`run #45`（`108d516`）success，11m56s。产物：
+`run #47`（`19e6ecd`）success，11m43s。产物：
 
 | 产物 | 大小 | 说明 |
 |---|---|---|
@@ -50,7 +50,7 @@
 最后一次装机反馈：首页显示「出了点小状况，部分功能暂时不可用」→ 说明
 `JsbClient.init()` 抛异常或返回非 0，**原生核心没加载起来**。
 
-**已定位并修（run #45 含修复，但真机尚未复验）**：
+**已定位并修（run #45 起包含修复，run #47 复验构建仍绿；真机尚未复验）**：
 `libyieyu_fetch.so`（Go 编）**没有 SONAME**，CMake 链接时把绝对路径写进
 `libyieyu_core.so` 的 `NEEDED` 字段 → 装机后加载器按那个路径找库 → `dlopen` 失败 → 全盘降级。
 修法：`go build -ldflags="-extldflags=-Wl,-soname,libyieyu_fetch.so"`，并在 CI 里加了
@@ -59,7 +59,7 @@
 ### 2.3 接手第一件事（按顺序）
 
 ```
-1. 装 run #45 的 APK
+1. 装 run #47 的 APK
 2. 看首页顶部还有没有"出了点小状况"
    · 没有了 → 核心已加载，继续 §5 的 P2
    · 还在   → 设置页连续点标题 5 次 → 弹出启动日志原文（含 dlopen 的确切报错）
@@ -173,4 +173,5 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 | 构建红在 native | 先看 CMake 报错行的 `#include` / Lua 5.1 API |
 | 构建红在 flutter | 99% 是 `app/patch_gradle.mjs` 注入的 Groovy 语法问题 |
 | 缓存 0 命中 | 看 step 20 的逐项命中；key 里千万别再放 `hashFiles` |
+| 推送文档也触发构建 | 已修：`paths-ignore` 同时写 `*.md` 和 `**/*.md`（只写 `**.md` 匹配不到根目录） |
 | job 根本不启动 | public/私有仓库计费问题（本仓库已 public，正常） |
