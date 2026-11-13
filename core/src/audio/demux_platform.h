@@ -28,6 +28,10 @@ int yieyu_pdec_eos(void);
 
 void yieyu_pdec_close(void);
 
+// 最近一次 open 失败的原因（给开发者面板；正常界面不展示）。
+// 例：路径打开失败 st=-10000，open 也失败 errno=13 / setDataSourceFd 失败 st=-10000（0 字节）
+const char* yieyu_pdec_error(void);
+
 #ifdef __cplusplus
 }
 #endif

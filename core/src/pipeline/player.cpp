@@ -216,10 +216,12 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   int64_t durUs = 0;
   const int rc = yieyu_pdec_open(target, &rate, &ch, &durUs);
   if (rc != 0) {
-    LOGE("[13] 打开音频失败 rc=%d uri=%.180s", rc, target);
+    const char* why = yieyu_pdec_error();
+    LOGE("[13] 打开音频失败 rc=%d uri=%.180s（%s）", rc, target, why ? why : "?");
     {
       std::lock_guard<std::mutex> lk(errMu_);
-      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d（%.120s）", rc, target);
+      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d：%s", rc,
+                    (why && *why) ? why : "未知原因");
     }
     state_.store(kError);
     return;

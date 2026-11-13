@@ -186,9 +186,11 @@ class _DevPanelState extends State<DevPanel> {
       if (base.isEmpty) base = 'picked.audio';
       final out = File('${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$base');
       await out.writeAsBytes(bytes, flush: true);
+      // 落盘字节数也要显示：如果是 0，说明选择器给了空内容，跟解码器无关
+      final long = await out.length();
       final rc = JsbClient.instance.playUrl(out.path);
       setState(() {
-        _hint = rc == 0 ? '已提交：${out.path}' : '未能受理（$rc）';
+        _hint = rc == 0 ? '已提交（$long 字节）：${out.path}' : '未能受理（$rc）';
         _urlCtrl.text = out.path;
       });
       if (rc == 0) await _reportPlayFailure();

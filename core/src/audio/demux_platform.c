@@ -13,7 +13,13 @@
 
 #include <stddef.h>
 #include <string.h>
-#include <sys/types.h>   /* ssize_t */
+#include <sys/types.h>   /* ssize_t / off64_t */
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "../common/log.h"
 
@@ -29,11 +35,25 @@
 /* ── 状态（单实例，单线程使用）───────────────────────────────────────── */
 static AMediaExtractor* g_ex = NULL;
 static AMediaCodec*     g_codec = NULL;
+static int              g_fd = -1;      /* 本地文件走 fd 打开时持有的句柄 */
 static int32_t          g_rate = 0;
 static int32_t          g_ch = 2;
 static int32_t          g_enc = YIEYU_ENC_PCM16;   /* 输出格式变更后才可信 */
 static int              g_inEos = 0;
 static int              g_outEos = 0;
+
+/* 最近一次打开失败的原因（给开发者面板看，正常界面不展示） */
+static char g_err[200] = {0};
+
+const char* yieyu_pdec_error(void) { return g_err; }
+
+static void set_err(const char* fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(g_err, sizeof(g_err), fmt, ap);
+  va_end(ap);
+}
+
 
 /* 转换暂存：一次输出缓冲可能上万样本，先转到这里，再由 read() 分次拷走 */
 #define YIEYU_STAGE_FLOATS 32768
@@ -46,6 +66,7 @@ static void stage_reset(void) { g_stage_len = 0; g_stage_rd = 0; }
 void yieyu_pdec_close(void) {
   if (g_codec) { AMediaCodec_stop(g_codec); AMediaCodec_delete(g_codec); g_codec = NULL; }
   if (g_ex) { AMediaExtractor_delete(g_ex); g_ex = NULL; }
+  if (g_fd >= 0) { close(g_fd); g_fd = -1; }   /* fd 方案持有到解码器真正关掉为止 */
   g_inEos = g_outEos = 0;
   stage_reset();
   g_rate = 0;
@@ -138,15 +159,55 @@ static int pump_once(void) {
 
 int yieyu_pdec_open(const char* uri, int32_t* rate, int32_t* channels, int64_t* durUs) {
   if (!uri || !*uri) return -1;
+  g_err[0] = 0;
   yieyu_pdec_close();
 
   g_ex = AMediaExtractor_new();
-  if (!g_ex) return -2;
+  if (!g_ex) { set_err("AMediaExtractor_new 返回空"); return -2; }
 
-  /* 默认超时 0 = 一直等到拿到数据；http(s) 由系统 MediaHTTP 负责 */
-  if (AMediaExtractor_setDataSource(g_ex, uri) != AMEDIA_OK) {
-    LOGE("[13] 打开失败（setDataSource）: %.200s", uri);
+  /* 打开数据源：URL 走系统 MediaHTTP；本地文件先试路径，失败再换 fd。
+     ★ 为什么要 fd 兜底：真机实测过 setDataSource(绝对路径) 在带中文/奇怪文件名的
+       缓存文件上会返回非 OK（rc=-3），而 fd 方案完全绕开"字符串 → 路径/URI"的解析，
+       只要进程能 open 就一定能读。fd 由 pdec_close 负责关。 */
+  media_status_t st = AMEDIA_OK;
+  if (strncmp(uri, "http://", 7) == 0 || strncmp(uri, "https://", 8) == 0) {
+    st = AMediaExtractor_setDataSource(g_ex, uri);
+    if (st != AMEDIA_OK) set_err("setDataSource(URL) 失败 st=%d", (int)st);
+  } else {
+    st = AMediaExtractor_setDataSource(g_ex, uri);
+    if (st != AMEDIA_OK) {
+      const int fd = open(uri, O_RDONLY);
+      if (fd < 0) {
+        set_err("路径打开失败 st=%d，open 也失败 errno=%d", (int)st, errno);
+      } else {
+        struct stat sst;
+        if (fstat(fd, &sst) != 0) {
+          set_err("fstat 失败 errno=%d", errno);
+          close(fd);
+        } else if (sst.st_size <= 0) {
+          set_err("文件是空的（%lld 字节）", (long long)sst.st_size);
+          close(fd);
+        } else {
+          const media_status_t st2 =
+              AMediaExtractor_setDataSourceFd(g_ex, fd, 0, (off64_t)sst.st_size);
+          if (st2 == AMEDIA_OK) {
+            g_fd = fd;          /* 交给 close 收尾 */
+            st = AMEDIA_OK;
+          } else {
+            set_err("setDataSourceFd 失败 st=%d（%lld 字节）", (int)st2, (long long)sst.st_size);
+            close(fd);
+          }
+        }
+      }
+    }
+  }
+
+  if (st != AMEDIA_OK) {
+    char keep[sizeof(g_err)];
+    memcpy(keep, g_err, sizeof(keep));
+    LOGE("[13] 打开失败：%s（%.120s）", keep, uri);
     yieyu_pdec_close();
+    memcpy(g_err, keep, sizeof(g_err));
     return -3;
   }
 
@@ -265,5 +326,6 @@ int yieyu_pdec_read(float* out, int frames) { (void)out; (void)frames; return 0;
 int yieyu_pdec_seek(int64_t posUs) { (void)posUs; return -100; }
 int yieyu_pdec_eos(void) { return 1; }
 void yieyu_pdec_close(void) {}
+const char* yieyu_pdec_error(void) { return "宿主平台没有媒体框架"; }
 
 #endif

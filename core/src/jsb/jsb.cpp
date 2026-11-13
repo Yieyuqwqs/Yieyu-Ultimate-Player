@@ -67,6 +67,9 @@ int Yieyu_Snapshot_Get(Yieyu_Snapshot* out) {
 int Yieyu_PlayUrl(const char* uri) {
   if (!g_inited.load()) return -1;
   bb_new_trace();
+  // ★ 先清掉上一次脚本/导入留下的错误：否则 Yieyu_LastError() 会把
+  //   "上一次导入失败"当成"这次播放失败"报给面板，排查直接跑偏。
+  set_err("");
   return yieyu::Engine::Instance().PlayUrl(uri);
 }
 
