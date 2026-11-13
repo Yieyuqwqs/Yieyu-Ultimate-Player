@@ -71,7 +71,7 @@ class _DevPanelState extends State<DevPanel> {
     super.dispose();
   }
 
-  void _play() {
+  Future<void> _play() async {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty) {
       setState(() => _hint = '先填一个音频直链或本地路径');
