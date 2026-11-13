@@ -37,7 +37,6 @@ extern "C" {
 int  yieyu_license_has_pubkey(void);
 int  yieyu_store_open(const char* path);
 char* yieyu_music_last_error(void);
-void  yieyu_fetch_free(void* p);
 int  yieyu_store_count(void);
 void yieyu_store_close(void);
 }
