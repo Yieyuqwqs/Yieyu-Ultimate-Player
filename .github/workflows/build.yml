@@ -140,13 +140,9 @@ jobs:
         if: inputs.force
         run: rm -rf out && echo "已清空 out/"
 
-      - name: 7. JDK 17
-        uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
+      # JDK 17 用 runner 预装的（不再 setup-java 下载）
 
-      - name: 8. Go 1.22
-        uses: actions/setup-go@v5
-        with: { go-version: '1.22' }
+      # Go 用 runner 预装的（不再 setup-go 下载）
 
       # Rust 已下线：模块 3/10/19 改成树内 C++（core/src/{gesture,license,store}）
 
@@ -168,7 +164,7 @@ jobs:
       - name: 12. ccache（外部工具只留 ccache，flatc 已不需要）
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ccache zip unzip
+          sudo apt-get install -y -qq ccache
           ccache --version | head -1
 
       # LuaJIT 已下线：模块 7 用自研 Lua 子集解释器（core/src/script/minilua.cpp）
@@ -217,11 +213,8 @@ jobs:
           echo "自校验摘要：$(cat app/assets/integrity/libyieyu_core.sha256)"
           test -f out/obfuscate/report.md && cat out/obfuscate/report.md
 
-      - name: 17. 增量补丁包
-        run: |
-          node tools/make-patch.mjs
-          cd out/patch && zip -qr "../apk/YieyuUltimate-patch-${GITHUB_SHA::7}.zip" . && cd -
-          ls -lh out/apk/
+      - name: 17. 增量补丁包（zip 由 node 自己打，不用系统 zip）
+        run: node tools/make-patch.mjs
 
       - name: 18. 上传 APK + 补丁包
         uses: actions/upload-artifact@v4

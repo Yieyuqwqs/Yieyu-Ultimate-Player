@@ -95,4 +95,3 @@ size_t yieyu_mem_used(void) {
 
 }  // extern "C"
 
-# 引擎/JSB 里用到 mem_pool 与 license/store，宏在 CMake 里统一定义

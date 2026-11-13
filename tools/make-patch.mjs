@@ -71,3 +71,93 @@ fs.writeFileSync(path.join(PKG, 'README.txt'), [
 ].join('\n'))
 
 console.log('  → out/patch: ' + manifest.files.length + ' 个 .so，共 ' + (total / 1048576).toFixed(1) + ' MB')
+
+// 自己打 zip（不再依赖 apt 的 zip 命令）
+{
+  const outZip = path.join(OUT, 'apk', 'YieyuUltimate-patch-' + manifest.git.slice(0, 7) + '.zip')
+  fs.mkdirSync(path.dirname(outZip), { recursive: true })
+  const entries = []
+  const addDir = (dir, prefix) => {
+    if (!fs.existsSync(dir)) return
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fp = path.join(dir, e.name)
+      if (e.isDirectory()) addDir(fp, prefix + e.name + '/')
+      else entries.push({ name: prefix + e.name, data: fs.readFileSync(fp) })
+    }
+  }
+  addDir(PKG, '')
+  writeZip(outZip, entries)
+}
+
+// ── 自己写 ZIP（不依赖系统的 zip 命令：那是外部工具，我们已经不装它了）──
+import zlib from 'node:zlib'
+function writeZip(outPath, entries) {
+  const locals = []
+  const centrals = []
+  let offset = 0
+  for (const e of entries) {
+    const name = Buffer.from(e.name, 'utf8')
+    const data = e.data
+    const crc = zlib.crc32 ? zlib.crc32(data) : crc32fallback(data)
+    const comp = zlib.deflateRawSync(data)
+    const useDeflate = comp.length < data.length
+    const body = useDeflate ? comp : data
+    const method = useDeflate ? 8 : 0
+
+    const lh = Buffer.alloc(30)
+    lh.writeUInt32LE(0x04034b50, 0)
+    lh.writeUInt16LE(20, 4)
+    lh.writeUInt16LE(0x0800, 6)          // UTF-8 名字
+    lh.writeUInt16LE(method, 8)
+    lh.writeUInt16LE(0, 10)
+    lh.writeUInt16LE(0, 12)
+    lh.writeUInt32LE(crc >>> 0, 14)
+    lh.writeUInt32LE(body.length, 18)
+    lh.writeUInt32LE(data.length, 22)
+    lh.writeUInt16LE(name.length, 26)
+    lh.writeUInt16LE(0, 28)
+    locals.push(lh, name, body)
+
+    const ch = Buffer.alloc(46)
+    ch.writeUInt32LE(0x02014b50, 0)
+    ch.writeUInt16LE(20, 4)
+    ch.writeUInt16LE(20, 6)
+    ch.writeUInt16LE(0x0800, 8)
+    ch.writeUInt16LE(method, 10)
+    ch.writeUInt16LE(0, 12)
+    ch.writeUInt16LE(0, 14)
+    ch.writeUInt32LE(crc >>> 0, 16)
+    ch.writeUInt32LE(body.length, 20)
+    ch.writeUInt32LE(data.length, 24)
+    ch.writeUInt16LE(name.length, 28)
+    ch.writeUInt16LE(0, 30)
+    ch.writeUInt16LE(0, 32)
+    ch.writeUInt16LE(0, 34)
+    ch.writeUInt16LE(0, 36)
+    ch.writeUInt32LE(0, 38)
+    ch.writeUInt32LE(offset, 42)
+    centrals.push(ch, name)
+
+    offset += lh.length + name.length + body.length
+  }
+  const central = Buffer.concat(centrals)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(0, 4)
+  end.writeUInt16LE(0, 6)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(central.length, 12)
+  end.writeUInt32LE(offset, 16)
+  end.writeUInt16LE(0, 20)
+  fs.writeFileSync(outPath, Buffer.concat([...locals, central, end]))
+  console.log('  → ' + outPath + '（' + entries.length + ' 个文件）')
+}
+function crc32fallback(buf) {
+  let c = 0xffffffff
+  for (const b of buf) {
+    c ^= b
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  }
+  return (c ^ 0xffffffff) >>> 0
+}
