@@ -13,6 +13,11 @@ on:
         default: false
   push:
     branches: [main]
+    # 只改文档/说明不触发构建（省 Actions 分钟）
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'lua/**.lua'
 
 permissions:
   contents: write

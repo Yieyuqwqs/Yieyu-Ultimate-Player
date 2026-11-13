@@ -136,6 +136,9 @@
 | 21 | 脚本里 `http_post` 是 nil | 沙箱只注册了 `http_get` | 注册 `http_get/http_post/request/fetch/http.*` 五个别名指向同一出口 |
 | 22 | 导入成功后仍搜不到歌 | LuaJIT 没编进包（OFFLINE），且 `http_get` 背后没有 curl | CI 自动编 LuaJIT（失败降级）+ 明示 HTTP 要等 P2 接 libcurl |
 
+| 23 | `'luaL_tolstring' was not declared` | LuaJIT 是 **Lua 5.1**，没有 5.2+ 的 `luaL_tolstring` | 改用 `lua_tostring` 逐参数取 |
+| 24 | LuaJIT 编不出来时整轮构建失败 | 克隆/编译不可控 | 做成**非阻塞**：编不出来就走 stub，导入/校验照常 |
+
 ### C. 装机运行期（最值钱的两条）
 
 | # | 报错 | 根因 | 修法 |
