@@ -20,6 +20,11 @@
 #define YIEYU_ENC_PCM16  2  /* AMEDIAFORMAT_PCM_16BIT */
 #define YIEYU_ENC_FLOAT  4  /* AMEDIAFORMAT_PCM_FLOAT */
 
+/* ★ NDK 的 AMEDIAFORMAT_KEY_PCM_ENCODING 到 API 28 才进头文件（带 __INTRODUCED_IN(28)），
+   而本工程 minSdk = 26（AAudio 的门槛）→ 直接引用会编译失败。
+   这个 key 的字符串值自 API 21 起就稳定是 "pcm-encoding"，写字面量即可。 */
+#define YIEYU_KEY_PCM_ENCODING "pcm-encoding"
+
 
 /* ── 状态（单实例，单线程使用）───────────────────────────────────────── */
 static AMediaExtractor* g_ex = NULL;
@@ -85,7 +90,7 @@ static void refresh_output_format(void) {
   AMediaFormat* of = AMediaCodec_getOutputFormat(g_codec);
   if (!of) return;
   int32_t enc = 0, ch = 0;
-  if (AMediaFormat_getInt32(of, AMEDIAFORMAT_KEY_PCM_ENCODING, &enc) && enc > 0) g_enc = enc;
+  if (AMediaFormat_getInt32(of, YIEYU_KEY_PCM_ENCODING, &enc) && enc > 0) g_enc = enc;
   if (AMediaFormat_getInt32(of, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &ch) && ch > 0) g_ch = ch;
   AMediaFormat_delete(of);
 }
