@@ -164,6 +164,19 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 
 ---
 
+## 7.5 签名密钥的血泪史（务必别重演）
+
+`app/signing/yieyu.jks` 是 **CI 用 keytool 生成后 commit 回仓库**的，本机原本没有副本。
+而我们推送用的是"全量树"提交（支持删除文件）→ **每次 push 都会把它删掉** →
+下一次 CI 的 `0.3` 步骤发现文件不存在，又生成**新的一把** → 签名变了 → 覆盖安装失败。
+
+现在的防护：
+1. 本地已把这个文件拉回来（`node pull-key.mjs`），推送时会原样带上；
+2. `push.js` 里加了 `PROTECTED` 检查：远端有、本地缺 → **直接中止提交**。
+
+> 历史上已经因此换过三把密钥。真要换密钥，必须同时：
+> ①改 `app/signing/README.md` ②告知用户卸载重装 ③把旧 key 归档。
+
 ## 8. 常见故障对照
 
 | 现象 | 先看哪里 |
@@ -173,5 +186,6 @@ docs/      ARCH_24 / DATAFLOW / BUILD / CONTRACTS / ROADMAP / BLUEPRINT
 | 构建红在 native | 先看 CMake 报错行的 `#include` / Lua 5.1 API |
 | 构建红在 flutter | 99% 是 `app/patch_gradle.mjs` 注入的 Groovy 语法问题 |
 | 缓存 0 命中 | 看 step 20 的逐项命中；key 里千万别再放 `hashFiles` |
-| 推送文档也触发构建 | 已修：`paths-ignore` 同时写 `*.md` 和 `**/*.md`（只写 `**.md` 匹配不到根目录） |
+| 推送文档也触发构建 | `paths-ignore` 要同时写 `*.md` 和 `**/*.md`（只写 `**.md` 匹配不到根目录） |
+| **每次构建签名都变、装不上** | ⚠️ 曾因"全量树推送"把 CI 生成的 `app/signing/yieyu.jks` 删掉，CI 又用 keytool 生成新的一把。**现已修**：本地保留该文件 + `push.js` 加保护检查（远端有、本地缺 → 直接中止） |
 | job 根本不启动 | public/私有仓库计费问题（本仓库已 public，正常） |
