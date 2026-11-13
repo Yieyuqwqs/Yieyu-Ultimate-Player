@@ -124,6 +124,64 @@ func gdGet(params url.Values, out interface{}) bool {
 	return json.Unmarshal(buf, out) == nil
 }
 
+// 搜索：gdstudio 优先（它的 id 能被它自己的 url 接口解析 → 才真出声音），
+// c.wwwweb.top（老板的 key）作为备用。
+func searchGd(kw string, p, n int) []songItem {
+	params := url.Values{}
+	params.Set("types", "search")
+	params.Set("source", "netease")
+	params.Set("name", kw)
+	params.Set("count", strconv.Itoa(n))
+	params.Set("pages", strconv.Itoa(p))
+	var items []struct {
+		ID     string   `json:"id"`
+		Name   string   `json:"name"`
+		Artist []string `json:"artist"`
+		Album  string   `json:"album"`
+	}
+	out := make([]songItem, 0, n)
+	if !gdGet(params, &items) {
+		return out
+	}
+	for _, it := range items {
+		if it.Name == "" || it.ID == "" {
+			continue
+		}
+		out = append(out, songItem{
+			ID: it.ID, Mid: "", Name: it.Name,
+			Artist: strings.Join(it.Artist, " / "), Album: it.Album, Source: "wy",
+		})
+	}
+	return out
+}
+
+func searchCw(kw string, p, n int) []songItem {
+	var r struct {
+		Code int `json:"code"`
+		Data []struct {
+			ID     json.Number `json:"id"`
+			Mid    string      `json:"mid"`
+			Name   string      `json:"name"`
+			Artist string      `json:"artist"`
+			Album  string      `json:"album"`
+		} `json:"data"`
+	}
+	out := make([]songItem, 0, n)
+	if !cwPost("/music/search", map[string]interface{}{"keyword": kw, "page": p, "limit": n}, &r) || r.Code != 200 {
+		return out
+	}
+	for _, d := range r.Data {
+		if d.Name == "" || d.ID.String() == "" {
+			continue
+		}
+		out = append(out, songItem{
+			ID: d.ID.String(), Mid: d.Mid, Name: d.Name,
+			Artist: d.Artist, Album: d.Album, Source: "wy",
+		})
+	}
+	return out
+}
+
 //export yieyu_music_search
 func yieyu_music_search(ckw *C.char, page C.int, limit C.int, outLen *C.int) *C.char {
 	if outLen != nil {
@@ -142,57 +200,9 @@ func yieyu_music_search(ckw *C.char, page C.int, limit C.int, outLen *C.int) *C.
 		n = 20
 	}
 
-	out := make([]songItem, 0, n)
-
-	// ① 老板的 key 通道
-	{
-		var r struct {
-			Code int `json:"code"`
-			Data []struct {
-				ID     json.Number `json:"id"`
-				Mid    string      `json:"mid"`
-				Name   string      `json:"name"`
-				Artist string      `json:"artist"`
-				Album  string      `json:"album"`
-			} `json:"data"`
-		}
-		if cwPost("/music/search", map[string]interface{}{"keyword": kw, "page": p, "limit": n}, &r) && r.Code == 200 {
-			for _, d := range r.Data {
-				if d.Name == "" || d.ID.String() == "" {
-					continue
-				}
-				out = append(out, songItem{
-					ID: d.ID.String(), Mid: d.Mid, Name: d.Name,
-					Artist: d.Artist, Album: d.Album, Source: "wy",
-				})
-			}
-		}
-	}
-	// ② gdstudio 兜底（也用它自己的 id，保证 url 通道能解析）
+	out := searchGd(kw, p, n)
 	if len(out) == 0 {
-		params := url.Values{}
-		params.Set("types", "search")
-		params.Set("source", "netease")
-		params.Set("name", kw)
-		params.Set("count", strconv.Itoa(n))
-		params.Set("pages", strconv.Itoa(p))
-		var items []struct {
-			ID     string   `json:"id"`
-			Name   string   `json:"name"`
-			Artist []string `json:"artist"`
-			Album  string   `json:"album"`
-		}
-		if gdGet(params, &items) {
-			for _, it := range items {
-				if it.Name == "" || it.ID == "" {
-					continue
-				}
-				out = append(out, songItem{
-					ID: it.ID, Mid: "", Name: it.Name,
-					Artist: strings.Join(it.Artist, " / "), Album: it.Album, Source: "wy",
-				})
-			}
-		}
+		out = searchCw(kw, p, n)
 	}
 	if len(out) == 0 {
 		return C.CString("[]")
