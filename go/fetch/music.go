@@ -33,12 +33,12 @@ const (
 	cwBase    = "https://c.wwwweb.top"
 	cwKey     = "IKM-P41000001-wqWCHmI24oNppwlH-OE" // 老板给的卡密式 key（搜索通道）
 	gdBase    = "https://music-api.gdstudio.xyz/api.php"
-	maxBody   = 1024 * 1024
-	reqTimout = 8 * time.Second
+	musicMaxBody = 1024 * 1024
+	musicTimeout = 8 * time.Second
 )
 
 var musicClient = &http.Client{
-	Timeout: reqTimout,
+	Timeout: musicTimeout,
 	Transport: &http.Transport{
 		MaxIdleConns:        8,
 		MaxIdleConnsPerHost: 4,
@@ -93,7 +93,7 @@ func cwPost(path string, payload interface{}, out interface{}) bool {
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
-	buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, musicMaxBody))
 	if err != nil {
 		return false
 	}
@@ -117,7 +117,7 @@ func gdGet(params url.Values, out interface{}) bool {
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
-	buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, musicMaxBody))
 	if err != nil {
 		return false
 	}
