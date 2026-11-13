@@ -1,6 +1,11 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../jsb/jsb_client.dart';
 import 'boot_log.dart';
@@ -21,6 +26,8 @@ class _DevPanelState extends State<DevPanel> {
   StreamSubscription<YieyuSnapshot>? _sub;
   YieyuSnapshot _snap = YieyuSnapshot.zero();
   String _hint = '';
+  String _stats = '';
+  Timer? _statsTimer;
   double _volume = 1.0;
   String _bootLog = '';
 
@@ -31,6 +38,10 @@ class _DevPanelState extends State<DevPanel> {
       if (mounted) setState(() => _snap = s);
     });
     _loadLog();
+    _statsTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      final line = JsbClient.instance.statsLine();
+      if (mounted && line.isNotEmpty && line != _stats) setState(() => _stats = line);
+    });
   }
 
   Future<void> _loadLog() async {
@@ -40,6 +51,7 @@ class _DevPanelState extends State<DevPanel> {
 
   @override
   void dispose() {
+    _statsTimer?.cancel();
     _sub?.cancel();
     _urlCtrl.dispose();
     super.dispose();
@@ -54,6 +66,55 @@ class _DevPanelState extends State<DevPanel> {
     final rc = JsbClient.instance.playUrl(url);
     BootLog.instance.write('devpanel playUrl rc=$rc');
     setState(() => _hint = rc == 0 ? '已提交，正在起播…' : '未能受理（$rc）');
+  }
+
+  /// 本地测试音：不联网也能验证 13→15 整条链路（解码 + AAudio）。
+  /// 44.1kHz / 16bit / 立体声 / 3 秒 440Hz，带 20ms 淡入淡出（防爆音）。
+  Future<void> _playTestTone() async {
+    setState(() => _hint = '正在生成测试音…');
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final f = File('${dir.path}/test440.wav');
+      if (!await f.exists()) await f.writeAsBytes(_wavTone(440.0, 3.0, 44100));
+      final rc = JsbClient.instance.playUrl(f.path);
+      setState(() => _hint = rc == 0 ? '已提交测试音（3 秒 440Hz）' : '未能受理（$rc）');
+    } catch (_) {
+      setState(() => _hint = '测试音写盘失败');
+    }
+  }
+
+  Uint8List _wavTone(double freq, double secs, int rate) {
+    const int ch = 2;
+    final int frames = (rate * secs).round();
+    final data = Uint8List(frames * ch * 2);
+    final bd = ByteData.view(data.buffer);
+    const double fade = 0.02;
+    for (var i = 0; i < frames; i++) {
+      final t = i / rate;
+      var env = 1.0;
+      if (t < fade) env = t / fade;
+      if (t > secs - fade) env = (secs - t) / fade;
+      final v = (0.28 * env * math.sin(2 * math.pi * freq * t) * 32767).round().clamp(-32767, 32767).toInt();
+      bd.setInt16(i * 4, v, true);
+      bd.setInt16(i * 4 + 2, v, true);
+    }
+    final h = BytesBuilder();
+    void u32(int v) => h.add(<int>[v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff]);
+    void u16(int v) => h.add(<int>[v & 0xff, (v >> 8) & 0xff]);
+    h.add('RIFF'.codeUnits);
+    u32(36 + data.length);
+    h.add('WAVE'.codeUnits);
+    h.add('fmt '.codeUnits);
+    u32(16);
+    u16(1);
+    u16(ch);
+    u32(rate);
+    u32(rate * ch * 2);
+    u16(ch * 2);
+    u16(16);
+    h.add('data'.codeUnits);
+    u32(data.length);
+    return Uint8List.fromList(<int>[...h.toBytes(), ...data]);
   }
 
   String _t(int ms) {
@@ -112,6 +173,10 @@ class _DevPanelState extends State<DevPanel> {
                         onPressed: () => JsbClient.instance.seekMs(pos + 10000),
                         child: const Text('+10s'),
                       ),
+                      OutlinedButton(
+                        onPressed: _playTestTone,
+                        child: const Text('本地测试音'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -138,6 +203,12 @@ class _DevPanelState extends State<DevPanel> {
                     '${_snap.sampleRate} Hz · 峰值 ${_snap.peakL.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 11, color: Colors.white54),
                   ),
+                  if (_stats.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: SelectableText(_stats,
+                          style: const TextStyle(fontSize: 10, color: Colors.white38)),
+                    ),
                   if (_hint.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),

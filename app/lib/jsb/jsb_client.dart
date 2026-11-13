@@ -89,6 +89,8 @@ typedef _VoidVoidNative = Void Function();
 typedef _VoidVoidDart = void Function();
 typedef _FloatVoidNative = Void Function(Float);
 typedef _FloatVoidDart = void Function(double);
+typedef _StatsNative = Void Function(Pointer<Utf8>, IntPtr);
+typedef _StatsDart = void Function(Pointer<Utf8>, int);
 class JsbClient {
   JsbClient._();
 
@@ -128,6 +130,8 @@ class JsbClient {
       _lib.lookupFunction<_VoidVoidNative, _VoidVoidDart>('Yieyu_Stop');
   late final _I64IntDart _seek =
       _lib.lookupFunction<_I64IntNative, _I64IntDart>('Yieyu_SeekMs');
+  late final _StatsDart _stats =
+      _lib.lookupFunction<_StatsNative, _StatsDart>('Yieyu_Stats');
   late final _FloatVoidDart _setVolume =
       _lib.lookupFunction<_FloatVoidNative, _FloatVoidDart>('Yieyu_SetVolume');
   late final _IsPublicDart _logIsPublic =
@@ -281,6 +285,18 @@ class JsbClient {
   /// 音量 0..1。
   void setVolume(double v) {
     try { _setVolume(v.clamp(0.0, 1.0)); } catch (_) {}
+  }
+  /// 各模块健康度一行（含播放器 st= 与 underrun=）。核心没起来时返回空串。
+  String statsLine() {
+    final buf = malloc.allocate<Utf8>(512);
+    try {
+      _stats(buf, 512);
+      return buf.toDartString();
+    } catch (_) {
+      return '';
+    } finally {
+      malloc.free(buf);
+    }
   }
   /// 日志是否真的写进了公共目录（/storage/emulated/0/yieyu）
   bool get logIsPublic {
