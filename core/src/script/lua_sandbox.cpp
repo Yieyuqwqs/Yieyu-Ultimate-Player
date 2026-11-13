@@ -116,10 +116,14 @@ static int l_http(lua_State* L) {
   (void)body;
   return 1;
 }
+// 注意：LuaJIT 是 Lua 5.1，没有 luaL_tolstring（5.2+ 才有）。
+// 这里用 lua_tostring 逐参数取字符串（数字会被就地转成字符串，5.1 行为）。
 static int l_log(lua_State* L) {
-  const char* s = luaL_tolstring(L, 1, nullptr);
-  bb_write(YIEYU_LOG_ERROR, "[7] script: %s", s ? s : "");
-  lua_pop(L, 1);
+  const int n = lua_gettop(L);
+  for (int i = 1; i <= n; ++i) {
+    const char* s = lua_tostring(L, i);
+    if (s) bb_write(YIEYU_LOG_ERROR, "[7] script: %s", s);
+  }
   return 0;
 }
 
