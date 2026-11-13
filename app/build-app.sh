@@ -54,7 +54,8 @@ mkdir -p "$JNI"
 for so in "$OUT/native/arm64/libyieyu_core.so" \
           "$OUT/rust/aarch64-linux-android/release/libyieyu_gesture.so" \
           "$OUT/rust/aarch64-linux-android/release/libyieyu_store.so" \
-          "$OUT/rust/aarch64-linux-android/release/libyieyu_license.so"; do
+          "$OUT/rust/aarch64-linux-android/release/libyieyu_license.so" \
+          "$OUT/go/libyieyu_fetch.so"; do
   if [[ -f "$so" ]]; then cp -v "$so" "$JNI/"; else echo "⚠ 缺 $so（App 会降级运行）"; fi
 done
 

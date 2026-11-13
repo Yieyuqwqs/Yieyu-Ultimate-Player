@@ -104,17 +104,41 @@ void count_hook(lua_State* L, lua_Debug*) {
   if (g_used > g_limit) luaL_error(L, "sandbox: instruction limit exceeded");
 }
 
-// 唯一的网络出口。真实的 socket 由模块 9（libcurl）提供；这里是它的 Lua 门面。
+// ── 网络出口：调用 libyieyu_fetch.so（Go 写的 C ABI，自带 TLS）──────
+// 没链接到时退化为返回空串，脚本会走"没结果"分支，不会崩。
+#ifdef YIEYU_HAVE_FETCH
+extern "C" {
+char* yieyu_fetch(const char* url, const char* method, const char* body,
+                  const char* headers, int* outLen);
+void  yieyu_fetch_free(char* p);
+}
+#endif
+
 static int l_http(lua_State* L) {
   const char* url = luaL_checkstring(L, 1);
-  const char* body = lua_isnoneornil(L, 2) ? nullptr : luaL_checkstring(L, 2);
+  const char* body = lua_isnoneornil(L, 2) ? "" : luaL_checkstring(L, 2);
   if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
     return luaL_error(L, "scheme not allowed");
   }
-  // TODO(P2)：接模块 9 的 curl，在独立线程跑，最多 8KB 返回
-  lua_pushstring(L, "");                    // 骨架期返回空串，脚本会走"没结果"分支
-  (void)body;
+  // http.post 这类调用允许第 3 个参数是 headers
+  const char* headers = lua_isnoneornil(L, 3) ? "" : luaL_checkstring(L, 3);
+  const bool isPost = !lua_isnoneornil(L, 2);
+
+#ifdef YIEYU_HAVE_FETCH
+  int outLen = 0;
+  char* resp = yieyu_fetch(url, isPost ? "POST" : "GET", body, headers, &outLen);
+  if (resp) {
+    lua_pushlstring(L, resp, (size_t)outLen);
+    yieyu_fetch_free(resp);
+    return 1;
+  }
+  lua_pushstring(L, "");                    // 网络失败：给空串，脚本自行判断
   return 1;
+#else
+  (void)body; (void)headers; (void)isPost;
+  lua_pushstring(L, "");
+  return 1;
+#endif
 }
 // 注意：LuaJIT 是 Lua 5.1，没有 luaL_tolstring（5.2+ 才有）。
 // 这里用 lua_tostring 逐参数取字符串（数字会被就地转成字符串，5.1 行为）。

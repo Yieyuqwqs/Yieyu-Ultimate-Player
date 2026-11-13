@@ -66,9 +66,9 @@ const STEPS = [
   { id: 'lua', deps: ['doctor'], bin: 'node', desc: '模块7 音源脚本资源收集',
     cmd: () => ['node', 'tools/collect-lua.mjs'], out: ['lua'], inputs: ['lua'] },
 
-  { id: 'native', deps: ['idl', 'zig', 'rust'], bin: 'cmake', desc: '模块7/8/9/12/13/14/15/16/17/18/20/21/23/24 → libyieyu_core.so',
+  { id: 'native', deps: ['idl', 'zig', 'rust', 'go'], bin: 'cmake', desc: '模块7/8/9/12/13/14/15/16/17/18/20/21/23/24 → libyieyu_core.so',
     cmd: () => ['bash', 'core/build-native.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, YIEYU_OFFLINE_ASSETS: OFFLINE ? 'ON' : 'OFF' }),
-    out: ['native'], inputs: ['core', 'idl'] },
+    out: ['native'], inputs: ['core', 'idl', 'out/go', 'out/rust'] },
 
   { id: 'gradle', deps: ['native'], bin: 'gradle', desc: '模块22 Kotlin 前台服务 AAR',
     cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },

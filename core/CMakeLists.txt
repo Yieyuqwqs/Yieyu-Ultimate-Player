@@ -52,6 +52,17 @@ else()
   message(WARNING "[7] 没有 third_party/lua（LuaJIT）→ 脚本只能导入+校验，执行返回 -2")
 endif()
 
+# ─── [9] 脚本 HTTP：Go 编的 libyieyu_fetch.so（自带 TLS，替代 curl）──
+set(_fetch "${YIEYU_OUT}/go/libyieyu_fetch.so")
+if(EXISTS "${_fetch}")
+  add_library(yieyu_fetch SHARED IMPORTED)
+  set_target_properties(yieyu_fetch PROPERTIES IMPORTED_LOCATION "${_fetch}")
+  add_compile_definitions(YIEYU_HAVE_FETCH=1)
+  message(STATUS "[9] 脚本 HTTP 已接入：libyieyu_fetch.so（Go + TLS）")
+else()
+  message(WARNING "[9] 没有 libyieyu_fetch.so → 脚本的 http_get 只会返回空串")
+endif()
+
 # ─── 第三方（见 third_party/README.md）────────────────────────────────
 if(NOT YIEYU_OFFLINE_ASSETS)
   include(cmake/FindFFmpeg.cmake)
@@ -136,6 +147,9 @@ endif()
 
 if(TARGET luajit)
   list(APPEND YIEYU_LIBS luajit m)
+endif()
+if(TARGET yieyu_fetch)
+  list(APPEND YIEYU_LIBS yieyu_fetch)
 endif()
 
 target_link_libraries(yieyu_core PRIVATE ${YIEYU_LIBS})
