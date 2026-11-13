@@ -23,7 +23,6 @@ const need = (mod, bin, args, note) => {
 need('5', 'go', ['version'], '>=1.22')
 need('1 / 2', 'flutter', ['--version'], 'Impeller 默认开')
 need('6', 'node', ['-v'], '>=18，构建期唯一脚本运行时')
-need('6', 'npm', ['-v'], 'ts-build 用')
 need('13 / 14 / 15 / 16 / …', 'cmake', ['--version'], '>=3.24')
 need('13 / 14 / 15', 'ninja', ['--version'], '生成器')
 need('22', 'java', ['-version'], 'JDK 17')

@@ -79,6 +79,7 @@ class Engine {
   // [11] 自校验结果：-1=未跑 0=被改过 1=一致
   std::atomic<int> integ_{-1};
   std::atomic<int> luaSelftest_{-99};   // [7] 解释器自检：0=通过          // [18] -2 空闲 / -1 运行中 / 0 完成 / <0 失败
+  std::atomic<int> karaoke_{-2};          // [18] -2 空闲 / -1 运行中 / 0 完成 / <0 失败
   mutable std::mutex karaokeMu_;
   std::string karaokeOut_;
 

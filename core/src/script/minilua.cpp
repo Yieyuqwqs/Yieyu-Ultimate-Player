@@ -895,6 +895,10 @@ struct JsonP {
   }
 };
 
+// 前置声明：宿主函数（pcall）要用到 callValue，evalExprMulti 也要用
+Stat execBlock(VM* vm, Env* env, const std::vector<Node*>& body, Value* ret);
+Stat callValue(VM* vm, Env* env, const Value& fn, std::vector<Value> args, std::vector<Value>* rets);
+
 // ══════════════ 宿主函数 ══════════════
 enum HostId {
   H_HTTP_GET = 0, H_HTTP_POST, H_LOG, H_TOSTRING, H_TONUMBER, H_TYPE, H_PCALL, H_IPAIRS,
