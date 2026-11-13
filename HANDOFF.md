@@ -213,6 +213,38 @@ Dart 面板「调用 get_music_url」
 
 ---
 
+### 2.11 路径唯一真相（2026-11-13 晚，根因修复；**取代 §2.7 的分段补丁**）
+
+#### 根因（一句话）
+「往哪写」这件事原来在三处各做一遍：
+`blackbox` 自己探测公共目录 → `jsb` 自己拼 scripts 路径（还分公共/私有两条）→ 裸 `::mkdir` 只建一层，
+于是「重装 App 丢了『所有文件访问』」这一个外部变化，被放大成 3 处失败叠加，
+先表现为「导入失败但没有日志」，修完权限兜底又变成「私有目录没建出来 → rc=-3」。
+
+#### 现在只有一个决定点：`core/src/common/app_paths.{h,cpp}`
+| 函数 | 语义 |
+|---|---|
+| `yp_init(dataDir)` | 在 `Engine::Boot` 第一句调用，**全进程只调一次**；dataDir = `getApplicationSupportDirectory()` |
+| `yp_home()` | 运行根：公共 `/storage/emulated/0/yieyu` **真的可写**就用它，否则 `<data>/yieyu`；init 时递归建好 |
+| `yp_scripts()` | `<home>/scripts`；脚本只往这里写，只从这里扫 |
+| `yp_data()` | 私有目录（SQLite 只能放这里） |
+| `yp_ensure()` | **全工程唯一的 mkdir 实现**（递归、幂等） |
+| `yp_writable()` | 真写探针文件判断可写（`access(W_OK)` 在 Android 上会骗人） |
+
+配套清理（都是同一根因的产物）：
+- `blackbox`：`bb_init(dir)` 只收一个目录，不再探测、不再有 fallback 参数；
+- `jsb`：删掉 `scripts_dir()` / `legacy_scripts_dir()` / 自建 `ensure_dir()` / 双目录扫描，
+  导入只写 `yp_scripts()`，写完**立刻回读**验证；
+- 黑名单：`lua_sandbox_banned_text()` 成为**唯一实现**（jsb 不再维护第二份数组）；
+- Dart：不再出现任何 `/storage/…` 硬编码，路径一律问 `Yieyu_LogDir`（= `yp_home()`）。
+
+#### 诊断接口（真机自查顺序）
+1. 设置标题连点 5 次 → 开发者面板 →「运行目录」按钮：会显示目录 + 在公共还是私有；
+2. 导入脚本 → 失败时面板直接显示 `Yieyu_LastError()` 的原因（errno / 黑名单项 / loaded=0）；
+3. 面板「调用 get_music_url」验证脚本执行，或「本地测试音」验证 [13]+[15]。
+
+---
+
 ---
 
 ## 3. 本机工具脚本（都在 `~/work/up/`）

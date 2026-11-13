@@ -78,7 +78,8 @@ if(NOT YIEYU_OFFLINE_ASSETS)
 endif()
 
 # ─── 源文件：按模块分组，一眼看得见谁是谁 ─────────────────────────────
-set(SRC_COMMON  src/common/blackbox.cpp)
+set(SRC_COMMON  src/common/blackbox.cpp
+                src/common/app_paths.cpp)   # 路径唯一真相
 set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
                 src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
 set(SRC_PIPE    src/pipeline/engine.cpp

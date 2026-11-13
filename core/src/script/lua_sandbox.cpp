@@ -34,6 +34,21 @@ const char* kBan[] = {
 };
 constexpr int kBanCount = (int)(sizeof(kBan) / sizeof(kBan[0]));
 
+}  // namespace
+
+extern "C" int lua_sandbox_banned_text(const char* text, const char** which) {
+  if (which) *which = nullptr;
+  if (!text) return 0;
+  for (int i = 0; i < kBanCount; ++i) {
+    if (strstr(text, kBan[i]) != nullptr) {
+      if (which) *which = kBan[i];
+      return 1;
+    }
+  }
+  return 0;
+}
+
+namespace {
 bool file_banned(const char* path, const char** which) {
   FILE* f = fopen(path, "rb");
   if (!f) return true;
@@ -45,17 +60,12 @@ bool file_banned(const char* path, const char** which) {
   size_t got = fread(buf, 1, (size_t)n, f);
   buf[got] = 0;
   fclose(f);
-  bool bad = false;
-  for (int i = 0; i < kBanCount; ++i) {
-    if (strstr(buf, kBan[i])) { bad = true; if (which) *which = kBan[i]; break; }
-  }
+  const int bad = lua_sandbox_banned_text(buf, which);
   delete[] buf;
-  return bad;
+  return bad != 0;
 }
-}  // namespace
 
-namespace {
-// 扫一个目录并登记（不重置 g_count）——供 reload / add_dir 共用。
+// 扫一个目录并登记（唯一入口：lua_sandbox_reload 调它）
 int scan_dir(const char* dir, int* loaded, int* rejected) {
   DIR* d = opendir(dir);
   if (!d) return 0;                       // 目录还没建，不算错
@@ -102,13 +112,6 @@ extern "C" int lua_sandbox_reload(const char* dir, int* loaded, int* rejected) {
   return scan_dir(dir, loaded, rejected);
 }
 
-// 叠加第二个目录（比如公共目录不可写时，私有目录里的旧脚本也要能跑）
-extern "C" int lua_sandbox_add_dir(const char* dir, int* loaded, int* rejected) {
-  if (loaded) *loaded = 0;
-  if (rejected) *rejected = 0;
-  if (!dir || !*dir) return -1;
-  return scan_dir(dir, loaded, rejected);
-}
 
 #ifdef YIEYU_HAVE_LUAJIT
 extern "C" {

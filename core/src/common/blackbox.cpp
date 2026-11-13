@@ -1,5 +1,6 @@
 // 【黑匣子】实现。所有 I/O 在独立线程，调用方只做一次 memcpy 入队。
 #include "blackbox.h"
+#include "app_paths.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -68,18 +69,6 @@ void now_iso(char* out, size_t cap) {
   snprintf(out, cap, "%s.%03ld%+03ld:%02ld", base,
            (long)(ts.tv_nsec / 1000000L), (long)(tmv.tm_gmtoff / 3600),
            (long)((tmv.tm_gmtoff % 3600) / 60));
-}
-
-int ensure_dir(const char* d) {
-  if (!d || !*d) return -1;
-  char tmp[512];
-  snprintf(tmp, sizeof(tmp), "%s", d);
-  for (char* p = tmp + 1; *p; ++p) {
-    if (*p == '/') { *p = 0; mkdir(tmp, 0770); *p = '/'; }
-  }
-  mkdir(tmp, 0770);
-  struct stat st{};
-  return (stat(tmp, &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : -1;
 }
 
 void rotate_if_needed() {
@@ -184,11 +173,12 @@ const char* parse_module(const char* fmt, char* mod, size_t modCap) {
 
 extern "C" {
 
-int bb_init(const char* publicDir, const char* fallbackDir) {
+int bb_init(const char* dir) {
   g_isPublic = 0;
-  if (publicDir && ensure_dir(publicDir) == 0) { g_isPublic = 1; snprintf(g_dir, sizeof(g_dir), "%s", publicDir); }
-  else if (fallbackDir && ensure_dir(fallbackDir) == 0) { snprintf(g_dir, sizeof(g_dir), "%s", fallbackDir); }
-  else return -1;
+  if (!dir || !*dir) return -1;
+  if (yp_ensure(dir) != 0) return -2;          // 唯一的 mkdir 实现（递归）
+  snprintf(g_dir, sizeof(g_dir), "%s", dir);
+  g_isPublic = (strncmp(dir, "/storage/", 9) == 0) ? 1 : 0;
 
   snprintf(g_file, sizeof(g_file), "%s/yieyu_log.txt", g_dir);
   g_fp = fopen(g_file, "ab");
@@ -196,7 +186,7 @@ int bb_init(const char* publicDir, const char* fallbackDir) {
 
   g_run.store(true);
   g_writer = std::thread(writer_loop);
-  return g_isPublic ? 0 : 1;                 // 1 = 降级到私有目录
+  return 0;
 }
 
 const char* bb_dir(void) { return g_dir; }
@@ -256,7 +246,7 @@ int bb_export(char* out, size_t cap) {
   if (!g_dir[0]) return -1;
   char dst[560];
   snprintf(dst, sizeof(dst), "%s/exported", g_dir);
-  ensure_dir(dst);
+  yp_ensure(dst);
   // 把当前 + 三个历史文件拷过去（拿不到公共目录时就地导出，文件管理器也能进私有目录的少见场景不管）
   const char* names[4] = {"yieyu_log.txt", "yieyu_log.txt.1", "yieyu_log.txt.2", "yieyu_log.txt.3"};
   for (auto* nm : names) {

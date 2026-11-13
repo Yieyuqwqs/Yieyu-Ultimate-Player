@@ -20,8 +20,9 @@ int  lua_sandbox_run(const char* scriptName, const char* input, char* out, int c
 // loaded = 通过的脚本数，rejected = 被拒的脚本数（被拒的**不会**加载）
 int  lua_sandbox_reload(const char* dir, int* loaded, int* rejected);
 
-// 再叠加一个脚本目录（同名以先扫到的为准）。用于「公共目录不可写 → 私有目录兜底」。
-int  lua_sandbox_add_dir(const char* dir, int* loaded, int* rejected);
+// 黑名单的**唯一实现**（jsb 导入时对内存文本判定、扫描时对文件判定，都走它）
+// 命中返回 1，并把命中的那条短语写到 *which
+int  lua_sandbox_banned_text(const char* text, const char** which);
 
 // 调脚本里的全局函数（如 get_music_url）。argv/argc 是字符串参数，结果写进 out。
 // 0=成功 -1=参数错 -2=脚本载入失败 -3=没这个函数 -4=运行时报错

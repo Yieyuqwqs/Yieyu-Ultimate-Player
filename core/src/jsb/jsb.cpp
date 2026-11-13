@@ -7,6 +7,7 @@
 #include "../common/log.h"
 #include "../pipeline/engine.h"
 #include "../common/blackbox.h"
+#include "../common/app_paths.h"
 #include "../script/lua_sandbox.h"
 #include <cstdlib>
 #include <sys/stat.h>
@@ -19,11 +20,8 @@
 namespace {
 std::atomic<bool> g_inited{false};
 std::mutex        g_postMu;        // 下行串行（Flutter 只有一条 UI 线程，锁代价可忽略）
-char              g_filesDir[512] = {0};
 char              g_lastError[256] = {0};
-// 脚本目录：公共目录可写就用公共目录（用户能直接放脚本），否则落到 App 私有目录。
-// ★ 重装 App 会撤销「所有文件访问」权限 —— 那时公共目录写不进去，
-//   旧代码直接返回 -3，表现就是「脚本导入失败」，其实只是权限没了。必须兜底。
+
 // 失败原因只给「开发者面板/诊断文件」看，绝不进正常界面（铁律：UI 静默）
 void set_err(const char* fmt, ...) {
   va_list ap;
@@ -31,44 +29,14 @@ void set_err(const char* fmt, ...) {
   std::vsnprintf(g_lastError, sizeof(g_lastError), fmt, ap);
   va_end(ap);
 }
-
-// 递归建目录（一次 mkdir 只能建最后一层；私有目录可能整个都还没建）
-int ensure_dir(const char* d) {
-  if (!d || !*d) return -1;
-  char tmp[900];
-  std::snprintf(tmp, sizeof(tmp), "%s", d);
-  for (char* p = tmp + 1; *p; ++p) {
-    if (*p == '/') { *p = 0; ::mkdir(tmp, 0770); *p = '/'; }
-  }
-  ::mkdir(tmp, 0770);
-  struct stat st{};
-  return (::stat(tmp, &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : -1;
-}
-
-void scripts_dir(char* out, size_t cap) {
-  if (bb_is_public()) {
-    std::snprintf(out, cap, "%s/scripts", bb_dir());
-  } else {
-    std::snprintf(out, cap, "%s/yieyu/scripts", g_filesDir);
-  }
-}
-
-void legacy_scripts_dir(char* out, size_t cap) {
-  if (bb_is_public()) {
-    std::snprintf(out, cap, "%s/yieyu/scripts", g_filesDir);
-  } else {
-    std::snprintf(out, cap, "%s/scripts", bb_dir());
-  }
-}
 }  // namespace
 
 extern "C" {
 
 int Yieyu_Init(const char* filesDir, const char* abi, uint32_t flags) {
   if (g_inited.exchange(true)) return 0;
-  std::snprintf(g_filesDir, sizeof(g_filesDir), "%s", filesDir ? filesDir : "");
-  LOGI("JSB init abi=%s filesDir=%s flags=0x%x ver=%d", abi ? abi : "?", g_filesDir, flags, YIEYU_JSB_ABI);
-  return yieyu::Engine::Instance().Boot(g_filesDir, abi ? abi : "");
+  LOGI("JSB init abi=%s filesDir=%s flags=0x%x ver=%d", abi ? abi : "?", filesDir ? filesDir : "?", flags, YIEYU_JSB_ABI);
+  return yieyu::Engine::Instance().Boot(filesDir, abi ? abi : "");
 }
 
 void Yieyu_Shutdown(void) {
@@ -130,115 +98,85 @@ int Yieyu_ExportLogs(char* outDir, size_t cap) {
 }
 int Yieyu_LogDir(char* outDir, size_t cap) {
   if (!outDir || cap == 0) return -1;
-  std::snprintf(outDir, cap, "%s", bb_dir());
-  return bb_dir()[0] ? 0 : -1;
+  std::snprintf(outDir, cap, "%s", yp_home());
+  return yp_home()[0] ? 0 : -1;
 }
-int Yieyu_LogIsPublic(void) { return bb_is_public(); }
+int Yieyu_LogIsPublic(void) { return yp_is_public(); }
 void Yieyu_SetTrace(const char* traceId) { bb_set_trace(traceId); }
 
 int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
   if (!name || !data || len <= 0) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：参数非法 name=%p data=%p len=%d", (const void*)name, (const void*)data, len);
     set_err("参数非法：name=%s len=%d", name ? name : "(null)", len);
     return -1;
   }
   const size_t nlen = std::strlen(name);
   if (nlen < 5 || std::strcmp(name + nlen - 4, ".lua") != 0) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：文件名不是 .lua（%s）", name);
     set_err("文件名不是 .lua：%s", name);
     return -1;
   }
   if (len > 512 * 1024) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：脚本 %d 字节超过 512KB", len);
     set_err("脚本太大：%d 字节（上限 512KB）", len);
     return -4;
   }
 
-  // ★ 必须补 NUL：data 是 Dart 传来的裸字节，没有结束符。
-  //   之前直接 strstr(data, ...) 会越界读，可能误判黑名单也可能崩（踩过）。
+  // ★ 必须补 NUL：data 是 Dart 传来的裸字节，没有结束符（之前 strstr 越界踩过）
   std::vector<char> src((size_t)len + 1);
   std::memcpy(src.data(), data, (size_t)len);
   src[(size_t)len] = 0;
 
-  static const char* kBan[] = {"os.execute", "os.exit", "io.open", "io.write",
-                               "package.loadlib", "debug.sethook", "require(", "dofile(", "loadfile("};
-  for (const char* b : kBan) {
-    if (std::strstr(src.data(), b) != nullptr) {
-      bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入 %s：触发沙箱黑名单 \"%s\"（脚本 %d 字节）", name, b, len);
-      set_err("触发沙箱黑名单：%s", b);
-      return -2;
-    }
+  // 黑名单：**唯一实现**在 lua_sandbox（这里不再维护第二份数组）
+  const char* which = nullptr;
+  if (lua_sandbox_banned_text(src.data(), &which) != 0) {
+    bb_write(YIEYU_LOG_ERROR, "[7] 拒绝导入 %s：触发沙箱黑名单 \"%s\"（%d 字节）",
+             name, which ? which : "?", len);
+    set_err("触发沙箱黑名单：%s", which ? which : "?");
+    return -2;
   }
 
-  // 目录：公共目录可写 → 公共；否则 → 私有（重装后没授权时的兜底）
-  char dir[700], path[800], priv[800], privRoot[800], path2[800];
-  scripts_dir(dir, sizeof(dir));
-  std::snprintf(privRoot, sizeof(privRoot), "%s/yieyu", g_filesDir);
-  std::snprintf(priv, sizeof(priv), "%s/scripts", privRoot);
-  std::snprintf(path, sizeof(path), "%s/%s", dir, name);
-
-  // ★ 必须**递归**建目录：私有目录可能是 <filesDir>/yieyu/scripts，中间层不存在时
-  //   单次 mkdir("…/yieyu/scripts") 会 ENOENT，fopen 跟着失败 → 表面看就是「导入失败」。
-  ensure_dir(privRoot);
-  ensure_dir(priv);
-  const int mk = ensure_dir(dir);
+  // 脚本目录只有一个来源：app_paths（已在 init 时建好）
+  char path[800];
+  std::snprintf(path, sizeof(path), "%s/%s", yp_scripts(), name);
 
   FILE* f = std::fopen(path, "wb");
   if (!f) {
     const int e1 = errno;
-    // 双保险：公共目录写不进去（没授权/只读）就立刻退到私有目录
-    if (std::strcmp(dir, priv) != 0) {
-      std::snprintf(path2, sizeof(path2), "%s/%s", priv, name);
-      f = std::fopen(path2, "wb");
-      if (f) std::snprintf(path, sizeof(path), "%s", path2);
-    }
-    if (!f) {
-      bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d, mkdir=%d）", path, e1, mk);
-      set_err("写盘被拒 errno=%d path=%s（目录建了没：%d）", e1, path, mk);
-      return -3;
-    }
+    bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：写盘打不开 %s（errno=%d）", path, e1);
+    set_err("写盘被拒 errno=%d path=%s", e1, path);
+    return -3;
   }
   const size_t wrote = std::fwrite(src.data(), 1, (size_t)len, f);
+  std::fflush(f);
   std::fclose(f);
   if (wrote != (size_t)len) {
     bb_write(YIEYU_LOG_ERROR, "[7] 导入失败：只写进 %zu/%d 字节 → %s", wrote, len, path);
     set_err("只写进 %zu/%d 字节", wrote, len);
     return -3;
   }
+  // 立刻回读一次：写成功但读不到（权限/加密目录）这种情况要当场暴露
+  FILE* rf = std::fopen(path, "rb");
+  if (!rf) {
+    set_err("写完读不回来 path=%s", path);
+    return -3;
+  }
+  std::fclose(rf);
 
   set_err("");
-  int loaded = 0, rejected = 0, l2 = 0, r2 = 0;
-  // 以「脚本真正落盘的目录」为主目录，再把另一个目录叠上来
-  const char* mainDir = (std::strncmp(path, priv, std::strlen(priv)) == 0) ? priv : dir;
-  const char* otherDir = (std::strcmp(mainDir, priv) == 0) ? dir : priv;
-  lua_sandbox_reload(mainDir, &loaded, &rejected);
-  lua_sandbox_add_dir(otherDir, &l2, &r2);
-  loaded += l2;
-  rejected += r2;
-  // 成功不记录（日志铁律 2）；只有全被拒才算失败
-  if (rejected > 0 && loaded == 0) {
-    set_err("脚本已写入，但全部被沙箱拒绝（%d 个）", rejected);
+  int loaded = 0, rejected = 0;
+  lua_sandbox_reload(yp_scripts(), &loaded, &rejected);
+  bb_write(YIEYU_LOG_ERROR, "[7] 导入完成 %s：登记 %d 个、拒绝 %d 个", name, loaded, rejected);
+  if (loaded == 0) {
+    set_err("脚本写入成功但没能登记（loaded=0, rejected=%d）", rejected);
     return -2;
   }
   return 0;
 }
 
 int Yieyu_ReloadScripts(int* loaded, int* rejected) {
-  // 主目录（公共可写用公共，否则私有）+ 叠加另一个目录的旧脚本
-  char dir[700], other[700];
-  scripts_dir(dir, sizeof(dir));
-  legacy_scripts_dir(other, sizeof(other));
-
-  int l1 = 0, r1 = 0, l2 = 0, r2 = 0;
-  const int rc = lua_sandbox_reload(dir, &l1, &r1);
+  const int rc = lua_sandbox_reload(yp_scripts(), loaded, rejected);
   if (rc != 0) {
-    bb_write(YIEYU_LOG_ERROR, "[7] 脚本目录不可用：%s", dir);
-    return rc;
+    bb_write(YIEYU_LOG_ERROR, "[7] 脚本目录不可用：%s", yp_scripts());
   }
-  lua_sandbox_add_dir(other, &l2, &r2);
-  if (loaded) *loaded = l1 + l2;
-  if (rejected) *rejected = r1 + r2;
-  return 0;
+  return rc;
 }
 
 int Yieyu_ScriptCall(const char* script, const char* fn,

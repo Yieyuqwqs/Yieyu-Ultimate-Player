@@ -15,11 +15,11 @@ extern "C" {
 
 enum { YIEYU_LOG_ERROR = 1, YIEYU_LOG_FATAL = 2 };
 
-// 返回最终使用的目录（可能是降级后的私有目录）。dir 为空表示还没有初始化。
-// fallbackDir 一般是 filesDir（App 私有），publicDir 一般是 /storage/emulated/0/yieyu
-int  bb_init(const char* publicDir, const char* fallbackDir);
+// dir 由 app_paths 决定（yp_home()），黑匣子**不再自己探测**公共/私有。
+// 0=成功；-1=参数错；-2=目录建不出来。
+int  bb_init(const char* dir);
 const char* bb_dir(void);
-int  bb_is_public(void);          // 1 = 真写进了 /storage/emulated/0/yieyu
+int  bb_is_public(void);          // 1 = 日志真的在 /storage/emulated/0/yieyu 下
 
 // 只记 ERROR/FATAL。fmt 里以 "[13] ..." 开头会自动解析成模块号。
 void bb_write(int level, const char* fmt, ...)

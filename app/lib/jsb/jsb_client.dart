@@ -95,6 +95,8 @@ typedef _CallNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>
 typedef _CallDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
     Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
 typedef _ConstCharDart = Pointer<Utf8> Function();
+typedef _DirNative = Int32 Function(Pointer<Utf8>, IntPtr);
+typedef _DirDart = int Function(Pointer<Utf8>, int);
 typedef _StatsNative = Void Function(Pointer<Utf8>, IntPtr);
 typedef _IntVoidNative = Void Function(Int32);
 typedef _IntVoidDart = void Function(int);
@@ -148,6 +150,8 @@ class JsbClient {
       _lib.lookupFunction<_IntFloatVoidNative, _IntFloatVoidDart>('Yieyu_SetEqGain');
   late final _ToneVoidDart _setTone =
       _lib.lookupFunction<_ToneVoidNative, _ToneVoidDart>('Yieyu_SetTone');
+  late final _DirDart _logDir =
+      _lib.lookupFunction<_DirNative, _DirDart>('Yieyu_LogDir');
   late final _CallDart _scriptCallFn =
       _lib.lookupFunction<_CallNative, _CallDart>('Yieyu_ScriptCall');
   late final _ConstCharDart _lastError =
@@ -322,6 +326,19 @@ class JsbClient {
     try {
       _setTone(tube ? 1 : 0, vinyl ? 1 : 0, lpf ? 1 : 0, drive);
     } catch (_) {}
+  }
+
+  /// 运行目录（日志/脚本都在里面）。**Dart 侧唯一的路径来源**，不许自己拼 /storage/…
+  String logDir() {
+    final buf = malloc.allocate<Utf8>(600);
+    try {
+      final rc = _logDir(buf, 600);
+      return rc == 0 ? buf.toDartString() : '';
+    } catch (_) {
+      return '';
+    } finally {
+      malloc.free(buf);
+    }
   }
 
   /// 调脚本里的函数（音源脚本的 get_music_url 就走这里）。返回 (rc, 结果串)。

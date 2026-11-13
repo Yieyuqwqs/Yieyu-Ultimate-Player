@@ -4,6 +4,7 @@
 #include "../jsb/jsb.h"
 #include "../common/log.h"
 #include "../common/blackbox.h"
+#include "../common/app_paths.h"
 #include "../sensor/gyro_asensor.h"
 #include "../store/sqlite_kv.h"
 #include "player.h"
@@ -21,14 +22,13 @@ Engine::~Engine() = default;
 PcmRing& Engine::pcmRing() { return Player::Instance().Ring(); }
 
 int Engine::Boot(const char* filesDir, const char* abi) {
-  // ⓪ 黑匣子先起来：之后任何模块出错才有地方落盘。
-  //    首选 /storage/emulated/0/yieyu（用户能直接拿），无权限就降级到 App 私有目录。
-  char fallback[600];
-  std::snprintf(fallback, sizeof(fallback), "%s/yieyu", filesDir ? filesDir : ".");
-  const int pub = bb_init("/storage/emulated/0/yieyu", fallback);
-  if (pub != 0) {
-    // 这条本身就值得记：说明用户没给全盘权限，导出按钮只能拿到私有目录
-    bb_write(YIEYU_LOG_ERROR, "[0] 日志目录降级到私有目录：%s（公共目录不可写）", fallback);
+  // ⓪ 路径先定死（唯一真相），再起黑匣子：之后任何模块要写盘都问 app_paths
+  const int pub = yp_init(filesDir);
+  if (bb_init(yp_home()) != 0) {
+    // 连私有目录都写不进：没有日志可落，但 App 仍要起来（UI 静默，原因在 dmesg 之外看不到）
+  }
+  if (!pub) {
+    bb_write(YIEYU_LOG_ERROR, "[0] 公共目录不可写，运行目录落在私有目录：%s", yp_home());
   }
 
   state_.store(State::kLicensing);
@@ -44,7 +44,7 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   }
 
   // ② [20] 打开 SQLite（唯一写者，WAL）
-  if (sqlite_kv_open(filesDir) != 0) {
+  if (sqlite_kv_open(yp_data()) != 0) {
     state_.store(State::kFault);
     bb_write(YIEYU_LOG_FATAL, "[20] SQLite 打开失败，dir=%s", filesDir ? filesDir : "?");
     return -2;

@@ -32,11 +32,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 导入诊断：把每一步结果追加到公共目录（老板能直接拿、我也能读）。
   /// 写不进去本身也是信息（= 没有「所有文件访问」权限）。
-  static const String _diagPath = '/storage/emulated/0/yieyu/import_diag.txt';
-
+  /// 诊断落盘位置由**原生**决定（app_paths），Dart 里不再出现 /storage/… 这种硬编码
   static Future<void> _diag(String line) async {
+    final dir = JsbClient.instance.logDir();
+    if (dir.isEmpty) return;                 // 原生还没起来：静默放弃
     try {
-      final f = File(_diagPath);
+      final f = File('$dir/import_diag.txt');
       await f.parent.create(recursive: true);
       await f.writeAsString('${DateTime.now().toIso8601String()} | $line\n',
           mode: FileMode.append, flush: true);
@@ -111,9 +112,9 @@ class _SettingsPageState extends State<SettingsPage> {
     // ② 核心不在（启动就降级）→ 至少把 Flutter 侧启动日志导出
     if (!ok) {
       try {
-        final pub = Directory('/storage/emulated/0/yieyu');
-        final target = await pub.exists()
-            ? pub.path
+        final dir = JsbClient.instance.logDir();
+        final target = dir.isNotEmpty
+            ? dir
             : (await getExternalStorageDirectory())?.path ??
                 (await getApplicationSupportDirectory()).path;
         ok = await BootLog.instance.exportTo(target);

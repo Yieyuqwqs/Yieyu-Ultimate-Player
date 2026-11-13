@@ -132,12 +132,12 @@ class _DevPanelState extends State<DevPanel> {
     return Uint8List.fromList(<int>[...h.toBytes(), ...data]);
   }
 
-  static const String _diagPath = '/storage/emulated/0/yieyu/import_diag.txt';
-
-  /// 每一步都写进公共目录：老板能直接看，我这边也能读到（写不进去本身也是信息）。
+  /// 诊断落盘位置由原生 app_paths 决定（公共可写就公共，否则私有）
   Future<void> _diag(String line) async {
+    final dir = JsbClient.instance.logDir();
+    if (dir.isEmpty) return;
     try {
-      final f = File(_diagPath);
+      final f = File('$dir/diag.txt');
       await f.parent.create(recursive: true);
       await f.writeAsString('${DateTime.now().toIso8601String()} | $line\n',
           mode: FileMode.append, flush: true);
@@ -248,15 +248,22 @@ class _DevPanelState extends State<DevPanel> {
   }
 
   Future<void> _checkPublicDir() async {
+    final dir = JsbClient.instance.logDir();
+    if (dir.isEmpty) {
+      setState(() => _scriptHint = '原生还没起来（拿不到运行目录）');
+      return;
+    }
+    final isPublic = JsbClient.instance.logIsPublic;
     try {
-      final f = File('/storage/emulated/0/yieyu/probe.txt');
+      final f = File('$dir/probe.txt');
       await f.parent.create(recursive: true);
       await f.writeAsString('${DateTime.now().toIso8601String()} ok\n',
           mode: FileMode.append, flush: true);
-      setState(() => _scriptHint = '公共目录可写 ✓  ${f.path}');
-      await _diag('公共目录可写 ok');
+      setState(() => _scriptHint =
+          '运行目录：$dir\n${isPublic ? '在公共目录（可直接用文件管理器放脚本）' : '在私有目录（没给「所有文件访问」，脚本请用导入按钮）'}');
+      await _diag('运行目录 $dir public=$isPublic');
     } catch (_) {
-      setState(() => _scriptHint = '公共目录不可写（需要「所有文件访问」权限）');
+      setState(() => _scriptHint = '运行目录不可写：$dir');
     }
   }
 
@@ -412,7 +419,7 @@ class _DevPanelState extends State<DevPanel> {
                     children: [
                       OutlinedButton(onPressed: _importByPath, child: const Text('按路径导入')),
                       OutlinedButton(onPressed: _reloadScripts, child: const Text('重新加载脚本')),
-                      OutlinedButton(onPressed: _checkPublicDir, child: const Text('公共目录可写？')),
+                      OutlinedButton(onPressed: _checkPublicDir, child: const Text('运行目录')),
                     ],
                   ),
                   if (_scriptHint.isNotEmpty)
