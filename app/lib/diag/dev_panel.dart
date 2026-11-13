@@ -23,10 +23,12 @@ class DevPanel extends StatefulWidget {
 
 class _DevPanelState extends State<DevPanel> {
   final TextEditingController _urlCtrl = TextEditingController();
+  final TextEditingController _pathCtrl = TextEditingController();
   StreamSubscription<YieyuSnapshot>? _sub;
   YieyuSnapshot _snap = YieyuSnapshot.zero();
   String _hint = '';
   String _stats = '';
+  String _scriptHint = '';
   Timer? _statsTimer;
   double _volume = 1.0;
   String _bootLog = '';
@@ -54,6 +56,7 @@ class _DevPanelState extends State<DevPanel> {
     _statsTimer?.cancel();
     _sub?.cancel();
     _urlCtrl.dispose();
+    _pathCtrl.dispose();
     super.dispose();
   }
 
@@ -115,6 +118,62 @@ class _DevPanelState extends State<DevPanel> {
     h.add('data'.codeUnits);
     u32(data.length);
     return Uint8List.fromList(<int>[...h.toBytes(), ...data]);
+  }
+
+  static const String _diagPath = '/storage/emulated/0/yieyu/import_diag.txt';
+
+  /// 每一步都写进公共目录：老板能直接看，我这边也能读到（写不进去本身也是信息）。
+  Future<void> _diag(String line) async {
+    try {
+      final f = File(_diagPath);
+      await f.parent.create(recursive: true);
+      await f.writeAsString('${DateTime.now().toIso8601String()} | $line\n',
+          mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+
+  Future<void> _importByPath() async {
+    final p = _pathCtrl.text.trim();
+    if (p.isEmpty) {
+      setState(() => _scriptHint = '先填脚本绝对路径');
+      return;
+    }
+    try {
+      final f = File(p);
+      if (!await f.exists()) {
+        setState(() => _scriptHint = '文件不存在：$p');
+        await _diag('路径不存在 $p');
+        return;
+      }
+      final bytes = await f.readAsBytes();
+      final name = p.split('/').last;
+      final rc = JsbClient.instance.importScript(name, bytes) ?? -1;
+      setState(() => _scriptHint = 'rc=$rc（$name，${bytes.length} 字节）');
+      await _diag('按路径导入 name=$name size=${bytes.length} rc=$rc');
+    } catch (e) {
+      setState(() => _scriptHint = '读取失败');
+      await _diag('按路径导入异常 $e');
+    }
+  }
+
+  Future<void> _reloadScripts() async {
+    final r = JsbClient.instance.reloadScripts();
+    final txt = r == null ? '重新加载失败（核心没起来）' : '已登记 ${r.$1} 个，被拒 ${r.$2} 个';
+    setState(() => _scriptHint = txt);
+    await _diag('reloadScripts $txt');
+  }
+
+  Future<void> _checkPublicDir() async {
+    try {
+      final f = File('/storage/emulated/0/yieyu/probe.txt');
+      await f.parent.create(recursive: true);
+      await f.writeAsString('${DateTime.now().toIso8601String()} ok\n',
+          mode: FileMode.append, flush: true);
+      setState(() => _scriptHint = '公共目录可写 ✓  ${f.path}');
+      await _diag('公共目录可写 ok');
+    } catch (_) {
+      setState(() => _scriptHint = '公共目录不可写（需要「所有文件访问」权限）');
+    }
   }
 
   String _t(int ms) {
@@ -213,6 +272,42 @@ class _DevPanelState extends State<DevPanel> {
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(_hint, style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('脚本导入（诊断）', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _pathCtrl,
+                    decoration: const InputDecoration(
+                      hintText: '脚本绝对路径（如 /storage/emulated/0/xxx.lua）',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(onPressed: _importByPath, child: const Text('按路径导入')),
+                      OutlinedButton(onPressed: _reloadScripts, child: const Text('重新加载脚本')),
+                      OutlinedButton(onPressed: _checkPublicDir, child: const Text('公共目录可写？')),
+                    ],
+                  ),
+                  if (_scriptHint.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: SelectableText(_scriptHint,
+                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
                     ),
                 ],
               ),

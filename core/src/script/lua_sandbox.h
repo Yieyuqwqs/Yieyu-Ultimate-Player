@@ -20,6 +20,9 @@ int  lua_sandbox_run(const char* scriptName, const char* input, char* out, int c
 // loaded = 通过的脚本数，rejected = 被拒的脚本数（被拒的**不会**加载）
 int  lua_sandbox_reload(const char* dir, int* loaded, int* rejected);
 
+// 再叠加一个脚本目录（同名以先扫到的为准）。用于「公共目录不可写 → 私有目录兜底」。
+int  lua_sandbox_add_dir(const char* dir, int* loaded, int* rejected);
+
 void lua_sandbox_shutdown(void);
 
 #ifdef __cplusplus

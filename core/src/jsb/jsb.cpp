@@ -19,6 +19,24 @@ std::atomic<bool> g_inited{false};
 std::mutex        g_postMu;        // 下行串行（Flutter 只有一条 UI 线程，锁代价可忽略）
 char              g_filesDir[512] = {0};
 char              g_lastError[256] = {0};
+// 脚本目录：公共目录可写就用公共目录（用户能直接放脚本），否则落到 App 私有目录。
+// ★ 重装 App 会撤销「所有文件访问」权限 —— 那时公共目录写不进去，
+//   旧代码直接返回 -3，表现就是「脚本导入失败」，其实只是权限没了。必须兜底。
+void scripts_dir(char* out, size_t cap) {
+  if (bb_is_public()) {
+    std::snprintf(out, cap, "%s/scripts", bb_dir());
+  } else {
+    std::snprintf(out, cap, "%s/yieyu/scripts", g_filesDir);
+  }
+}
+
+void legacy_scripts_dir(char* out, size_t cap) {
+  if (bb_is_public()) {
+    std::snprintf(out, cap, "%s/yieyu/scripts", g_filesDir);
+  } else {
+    std::snprintf(out, cap, "%s/scripts", bb_dir());
+  }
+}
 }  // namespace
 
 extern "C" {
@@ -116,18 +134,13 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
     }
   }
 
-  // 目录：优先黑匣子目录；bb_dir 为空时退回 filesDir（jsb_init 里存下来的）
-  char base[512];
-  if (bb_dir()[0]) {
-    std::snprintf(base, sizeof(base), "%s", bb_dir());
-  } else {
-    std::snprintf(base, sizeof(base), "%s/yieyu", g_filesDir);
-  }
-  char dir[600], path[700];
-  std::snprintf(dir, sizeof(dir), "%s/scripts", base);
+  // 目录：公共目录可写 → 公共；否则 → 私有（重装后没授权时的兜底）
+  char dir[700], path[800], priv[800];
+  scripts_dir(dir, sizeof(dir));
+  std::snprintf(priv, sizeof(priv), "%s/yieyu/scripts", g_filesDir);
   std::snprintf(path, sizeof(path), "%s/%s", dir, name);
-  ::mkdir(base, 0770);
   ::mkdir(dir, 0770);
+  ::mkdir(priv, 0770);
 
   FILE* f = std::fopen(path, "wb");
   if (!f) {
@@ -141,21 +154,31 @@ int Yieyu_ImportScript(const char* name, const uint8_t* data, int len) {
     return -3;
   }
 
-  int loaded = 0, rejected = 0;
+  int loaded = 0, rejected = 0, l2 = 0, r2 = 0;
   lua_sandbox_reload(dir, &loaded, &rejected);
+  lua_sandbox_add_dir(priv, &l2, &r2);
+  loaded += l2;
+  rejected += r2;
   // 成功不记录（日志铁律 2）；只有全被拒才算失败
   return (rejected > 0 && loaded == 0) ? -2 : 0;
 }
 
 int Yieyu_ReloadScripts(int* loaded, int* rejected) {
-  // 目录跟着黑匣子走：公共目录可用就用公共目录，否则用私有目录
-  char dir[600];
-  std::snprintf(dir, sizeof(dir), "%s/scripts", bb_dir());
-  const int rc = lua_sandbox_reload(dir, loaded, rejected);
+  // 主目录（公共可写用公共，否则私有）+ 叠加另一个目录的旧脚本
+  char dir[700], other[700];
+  scripts_dir(dir, sizeof(dir));
+  legacy_scripts_dir(other, sizeof(other));
+
+  int l1 = 0, r1 = 0, l2 = 0, r2 = 0;
+  const int rc = lua_sandbox_reload(dir, &l1, &r1);
   if (rc != 0) {
     bb_write(YIEYU_LOG_ERROR, "[7] 脚本目录不可用：%s", dir);
+    return rc;
   }
-  return rc;
+  lua_sandbox_add_dir(other, &l2, &r2);
+  if (loaded) *loaded = l1 + l2;
+  if (rejected) *rejected = r1 + r2;
+  return 0;
 }
 
 int Yieyu_Version(void) { return YIEYU_JSB_ABI; }

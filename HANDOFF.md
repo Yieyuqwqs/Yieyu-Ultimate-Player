@@ -109,6 +109,32 @@ Dart/JSB 线程只写原子请求 → 唯一解码线程做阻塞打开与解码
 
 ---
 
+### 2.7 「脚本导入失败」的真因（2026-11-13 下午，老板报障）
+
+真机现象：设置 → 导入 Lua 脚本 → 提示失败。
+
+**现场取证（这一步以后照着做，别猜）**：
+1. `/storage/emulated/0/yieyu/scripts/` 里只有 09:53 的 `yieyu.lua`，**没有新文件**；
+2. `/storage/emulated/0/yieyu/` 里**没有任何 .log**（= 原生侧没记过 ERROR）——
+   说明失败**还没进到原生**，或者原生写了但只写进了私有目录。
+
+**结论（最可能）**：App 在 14:08 被重装过一次。**重装会撤销「所有文件访问」（MANAGE_EXTERNAL_STORAGE）**，
+于是 `/storage/emulated/0/yieyu/scripts` 写不进去 → `Yieyu_ImportScript` 返回 -3
+→ 界面只显示「脚本导入失败，请重试」，而真正的 errno 被埋进（现在在私有目录的）黑匣子日志。
+
+**已修（结构性问题，不是补权限就完事）**：
+- 新增 `scripts_dir()`：**公共目录可写就用公共，不可写就落到 `<filesDir>/yieyu/scripts`**；
+- `lua_sandbox` 新增 `lua_sandbox_add_dir()`：重载时**两个目录都扫**（同名以先扫到的为准）；
+- 导入链路每一步都追加一行到 `/storage/emulated/0/yieyu/import_diag.txt`
+  （选择器返回空 / 名字不是 .lua / 读到空内容 / rc=… / 异常）——**能写进去就是权限还在，写不进去本身就是诊断**；
+- 开发者面板新增「脚本导入（诊断）」卡：按路径导入 / 重新加载脚本 / 公共目录可写？ 三个按钮，绕开 SAF 选择器。
+
+> 顺手确认：老板放在 `/sdcard/` 的那个「一键规范化+渲染音源.lua」是 **REAPER 的脚本**（全是 `reaper.*` API），
+> 不是本 App 的音源脚本；本 App 要的是落雪生态的 `get_music_url` / 搜索类脚本
+> （现成的在 `/storage/emulated/0/yieyu/scripts/yieyu.lua`）。
+
+---
+
 ## 3. 本机工具脚本（都在 `~/work/up/`）
 
 | 脚本 | 作用 | 用法 |

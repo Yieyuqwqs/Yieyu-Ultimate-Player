@@ -30,6 +30,19 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// 导入诊断：把每一步结果追加到公共目录（老板能直接拿、我也能读）。
+  /// 写不进去本身也是信息（= 没有「所有文件访问」权限）。
+  static const String _diagPath = '/storage/emulated/0/yieyu/import_diag.txt';
+
+  static Future<void> _diag(String line) async {
+    try {
+      final f = File(_diagPath);
+      await f.parent.create(recursive: true);
+      await f.writeAsString('${DateTime.now().toIso8601String()} | $line\n',
+          mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+
   Future<void> _importLua() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -40,11 +53,13 @@ class _SettingsPageState extends State<SettingsPage> {
         allowMultiple: false,
       );
       if (picked == null || picked.files.isEmpty) {
+        await _diag('选择器返回空（可能被取消，或 SAF 拿不到该文件）');
         setState(() => _busy = false);
         return;
       }
       final f = picked.files.single;
       if (!f.name.toLowerCase().endsWith('.lua')) {
+        await _diag('名字不是 .lua：${f.name}');
         setState(() => _busy = false);
         _toast('请选择 .lua 脚本文件');
         return;
@@ -54,12 +69,14 @@ class _SettingsPageState extends State<SettingsPage> {
         bytes = await File(f.path!).readAsBytes();
       }
       if (bytes == null) {
+        await _diag('读到空内容：${f.name} path=${f.path}');
         setState(() => _busy = false);
         _toast('读取失败，请重试');
         return;
       }
 
       final rc = JsbClient.instance.importScript(f.name, bytes) ?? -1;
+      await _diag('importScript name=${f.name} size=${bytes.length} rc=$rc');
       if (rc != 0) {
         await BootLog.instance.write('importScript 失败 rc=$rc name=${f.name} size=${bytes.length}');
       }
@@ -75,6 +92,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _toast('脚本导入失败，请重试');
       }
     } catch (e) {
+      await _diag('importScript 异常: $e');
       await BootLog.instance.write('importScript 异常: $e');
       if (mounted) setState(() => _busy = false);
       _toast('脚本导入失败，请重试');

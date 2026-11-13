@@ -54,21 +54,25 @@ bool file_banned(const char* path, const char** which) {
 }
 }  // namespace
 
-extern "C" int lua_sandbox_reload(const char* dir, int* loaded, int* rejected) {
-  if (loaded) *loaded = 0;
-  if (rejected) *rejected = 0;
-  if (!dir || !*dir) return -1;
-  snprintf(g_dir, sizeof(g_dir), "%s", dir);
-
+namespace {
+// 扫一个目录并登记（不重置 g_count）——供 reload / add_dir 共用。
+int scan_dir(const char* dir, int* loaded, int* rejected) {
   DIR* d = opendir(dir);
   if (!d) return 0;                       // 目录还没建，不算错
 
-  g_count = 0;
   struct dirent* e;
   while ((e = readdir(d)) != nullptr) {
     const char* nm = e->d_name;
     size_t len = strlen(nm);
     if (len < 5 || strcmp(nm + len - 4, ".lua") != 0) continue;
+
+    // 同名脚本以先扫到的为准（公共目录优先），避免双目录重复登记
+    bool dup = false;
+    for (int i = 0; i < g_count; ++i) {
+      if (strcmp(g_names[i], nm) == 0) { dup = true; break; }
+    }
+    if (dup) continue;
+
     char full[700];
     snprintf(full, sizeof(full), "%s/%s", dir, nm);
     const char* which = "";
@@ -86,6 +90,24 @@ extern "C" int lua_sandbox_reload(const char* dir, int* loaded, int* rejected) {
   }
   closedir(d);
   return 0;
+}
+}  // namespace
+
+extern "C" int lua_sandbox_reload(const char* dir, int* loaded, int* rejected) {
+  if (loaded) *loaded = 0;
+  if (rejected) *rejected = 0;
+  if (!dir || !*dir) return -1;
+  snprintf(g_dir, sizeof(g_dir), "%s", dir);
+  g_count = 0;
+  return scan_dir(dir, loaded, rejected);
+}
+
+// 叠加第二个目录（比如公共目录不可写时，私有目录里的旧脚本也要能跑）
+extern "C" int lua_sandbox_add_dir(const char* dir, int* loaded, int* rejected) {
+  if (loaded) *loaded = 0;
+  if (rejected) *rejected = 0;
+  if (!dir || !*dir) return -1;
+  return scan_dir(dir, loaded, rejected);
 }
 
 #ifdef YIEYU_HAVE_LUAJIT
