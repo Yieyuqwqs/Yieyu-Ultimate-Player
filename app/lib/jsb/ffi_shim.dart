@@ -30,7 +30,7 @@ class _Malloc {
 
 final _Malloc malloc = _Malloc();
 
-extension _Utf8String on String {
+extension Utf8String on String {
   /// UTF-8 编码并补 '\0'（C 侧只认真实字节，且我们永远不传裸指针）
   Pointer<Utf8> toNativeUtf8() {
     final bytes = utf8.encode(this);
@@ -42,7 +42,7 @@ extension _Utf8String on String {
   }
 }
 
-extension _Utf8Pointer on Pointer<Utf8> {
+extension Utf8Pointer on Pointer<Utf8> {
   String toDartString() {
     final u8 = cast<Uint8>();
     var len = 0;

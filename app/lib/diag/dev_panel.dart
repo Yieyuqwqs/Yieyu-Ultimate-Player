@@ -88,7 +88,7 @@ class _DevPanelState extends State<DevPanel> {
     setState(() => _hint = '正在生成测试音…');
     try {
       final dir = await NativeChannel.appDir() ?? '.';
-      final f = File('${dir.path}/test440.wav');
+      final f = File('$dir/test440.wav');   // dir 是平台通道给的路径字符串
       // 每次都重写：避免旧版本留下的半截文件把这条唯一的"听声"通道带偏
       await f.writeAsBytes(_wavTone(440.0, 3.0, 44100), flush: true);
       final rc = JsbClient.instance.playUrl(f.path);
