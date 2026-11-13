@@ -193,14 +193,14 @@ class JsbClient {
 
   /// 导入一个 .lua 脚本（SAF 选完直接喂字节，用户不用碰存储路径）。
   /// 返回 0=成功；-1 参数错；-2 触发沙箱黑名单；-3 写盘失败；-4 超过 512KB。
-  int importScript(String name, Uint8List bytes) {
+  int? importScript(String name, Uint8List bytes) {
     final n = name.toNativeUtf8();
     final buf = malloc.allocate<Uint8>(bytes.length);
     try {
       buf.asTypedList(bytes.length).setAll(0, bytes);
       return _import(n, buf, bytes.length);
     } catch (_) {
-      return -1;
+      return null;      // 核心没加载成功时，上层会降级提示
     } finally {
       malloc.free(n);
       malloc.free(buf);

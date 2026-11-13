@@ -1,15 +1,16 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../diag/boot_log.dart';
 import '../jsb/jsb_client.dart';
 
-/// 【模块 1】设置页 —— 两个真功能：导入 Lua 脚本、导出诊断日志。
+/// 【模块 1】设置页：导入 Lua 脚本 / 导出诊断日志。
 ///
-/// ★ UI 静默铁律：这里**不许**显示路径、异常、堆栈、模块名。
-///   导入失败只说"脚本导入失败"，具体原因进黑匣子。
+/// ★ UI 静默铁律：正常路径下**不显示**任何路径、异常、堆栈、模块名。
+///   唯一的例外是「隐秘查错入口」：连续点标题 5 次，才把启动日志原文摊出来（给开发看）。
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -19,6 +20,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _busy = false;
+  int _titleTaps = 0;
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -27,19 +29,18 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 调起系统 SAF 选择器 → 读字节 → 喂给底层沙箱
   Future<void> _importLua() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
       final picked = await FilePicker.platform.pickFiles(
-        type: FileType.any,          // 有些 ROM 不认 .lua 这个 MIME，放开类型更稳
-        withData: true,              // 直接拿字节，避免再要存储权限
+        type: FileType.any,
+        withData: true,
         allowMultiple: false,
       );
       if (picked == null || picked.files.isEmpty) {
         setState(() => _busy = false);
-        return;                       // 用户取消：什么都不说
+        return;
       }
       final f = picked.files.single;
       if (!f.name.toLowerCase().endsWith('.lua')) {
@@ -47,7 +48,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _toast('请选择 .lua 脚本文件');
         return;
       }
-      Uint8List? bytes = f.bytes;
+      var bytes = f.bytes;
       if (bytes == null && f.path != null) {
         bytes = await File(f.path!).readAsBytes();
       }
@@ -57,7 +58,10 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      final rc = JsbClient.instance.importScript(f.name, bytes);
+      final rc = JsbClient.instance.importScript(f.name, bytes) ?? -1;
+      if (rc != 0) {
+        await BootLog.instance.write('importScript 失败 rc=$rc name=${f.name} size=${bytes.length}');
+      }
       setState(() => _busy = false);
       switch (rc) {
         case 0:
@@ -69,29 +73,75 @@ class _SettingsPageState extends State<SettingsPage> {
         default:
           _toast('脚本导入失败，请重试');
       }
-    } catch (_) {
-      setState(() => _busy = false);
-      _toast('脚本导入失败，请重试');   // 异常对象绝不外露
+    } catch (e) {
+      await BootLog.instance.write('importScript 异常: $e');
+      if (mounted) setState(() => _busy = false);
+      _toast('脚本导入失败，请重试');
     }
   }
 
   Future<void> _export() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final ok = JsbClient.instance.exportLogs() != null;
+
+    // ① 核心在 → 导出黑匣子（真日志）
+    final dir = JsbClient.instance.exportLogs();
+    var ok = dir != null;
+
+    // ② 核心不在（启动就降级）→ 至少把 Flutter 侧启动日志导出
+    if (!ok) {
+      try {
+        final pub = Directory('/storage/emulated/0/yieyu');
+        final target = await pub.exists()
+            ? pub.path
+            : (await getExternalStorageDirectory())?.path ??
+                (await getApplicationSupportDirectory()).path;
+        ok = await BootLog.instance.exportTo(target);
+      } catch (_) {
+        ok = false;
+      }
+    }
+
     if (!mounted) return;
     setState(() => _busy = false);
     _toast(ok ? '已导出，可在文件管理器里查看' : '导出没成功，请重试');
   }
 
+  Future<void> _secretDiag() async {
+    final log = await BootLog.instance.read();
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('启动日志（仅开发用）'),
+        content: SingleChildScrollView(
+          child: SelectableText(log, style: const TextStyle(fontSize: 11)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(
+        title: GestureDetector(
+          onTap: () {
+            _titleTaps++;
+            if (_titleTaps >= 5) {
+              _titleTaps = 0;
+              _secretDiag();     // 隐秘查错入口
+            }
+          },
+          child: const Text('设置'),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 主按钮：导入脚本（热更唯一入口）
           SizedBox(
             width: double.infinity,
             height: 52,

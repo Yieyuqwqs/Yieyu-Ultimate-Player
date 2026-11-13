@@ -4,6 +4,7 @@ import 'dart:ffi' show Abi;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'diag/boot_log.dart';
 import 'jsb/jsb_client.dart';
 import 'shell/app_router.dart';
 
@@ -37,10 +38,16 @@ class _BootstrapperState extends State<_Bootstrapper> {
     try {
       final dir = await getApplicationSupportDirectory();
       final rc = JsbClient.instance.init(dir.path, Abi.current().toString());
-      if (rc != 0) _degraded = true;      // rc 只进日志，不展示
-      JsbClient.instance.startPump();
-    } catch (_) {
-      _degraded = true;                  // 异常对象绝不外露
+      if (rc != 0) {
+        _degraded = true;
+        BootLog.instance.write('Yieyu_Init 返回 $rc');
+      } else {
+        JsbClient.instance.startPump();
+      }
+      BootLog.instance.write('boot ok, abi=${Abi.current()}');
+    } catch (e) {
+      _degraded = true;                  // 异常对象绝不外露给界面
+      BootLog.instance.write('原生库加载失败: $e');
     } finally {
       if (mounted) setState(() => _ready = true);
     }

@@ -222,6 +222,18 @@ jobs:
           done
           echo "导出面 OK"
 
+      - name: 15.5 动态依赖检查（NEEDED 里不许有绝对路径）
+        run: |
+          RE=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
+          SO=out/native/arm64/libyieyu_core.so
+          echo "--- NEEDED ---"
+          $RE -d $SO | grep NEEDED || true
+          if $RE -d $SO | grep NEEDED | grep -q "/"; then
+            echo "✗ NEEDED 里出现绝对路径 → 装机必定 dlopen 失败" >&2; exit 1
+          fi
+          echo "--- 16KB 对齐检查 ---"
+          $RE -lW $SO | grep LOAD | head -5
+          echo "✓ 动态依赖 OK"
       - name: 16. 打包 APK（内部按指纹跳过未变模块）
         run: ./build.sh flutter && ./build.sh verify
 
