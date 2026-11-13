@@ -42,7 +42,10 @@ jobs:
           fetch-depth: 0
 
       - name: 0.1 兜底可执行位
-        run: chmod +x build.sh core/build-native.sh app/build-app.sh go/build-aar.sh
+        # ⚠️ 必须是块标量（run: |）。写成单行标量再追加缩进行，YAML 会把两行折叠成
+        #    一条命令：chmod +x a b chmod +x c → "chmod: cannot access 'chmod'"（踩过）
+        run: |
+          chmod +x build.sh core/build-native.sh app/build-app.sh go/build-aar.sh
           chmod +x app/patch_manifest.mjs app/patch_gradle.mjs tools/make-patch.mjs
 
       - name: 0.2 变更检测（决定编哪些模块）
