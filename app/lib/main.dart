@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ffi' show Abi;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import 'diag/boot_log.dart';
@@ -43,6 +44,7 @@ class _BootstrapperState extends State<_Bootstrapper> {
         BootLog.instance.write('Yieyu_Init 返回 $rc');
       } else {
         JsbClient.instance.startPump();
+        await _verifyIntegrity();
       }
       BootLog.instance.write('boot ok, abi=${Abi.current()}');
     } catch (e) {
@@ -50,6 +52,19 @@ class _BootstrapperState extends State<_Bootstrapper> {
       BootLog.instance.write('原生库加载失败: $e');
     } finally {
       if (mounted) setState(() => _ready = true);
+    }
+  }
+
+  /// [11] 防篡改：资产里的期望摘要 vs 磁盘上 so 的真实摘要。
+  /// 不一致不打扰用户（界面静默），只进黑匣子与开发者面板。
+  Future<void> _verifyIntegrity() async {
+    try {
+      final want = (await rootBundle.loadString('assets/integrity/libyieyu_core.sha256')).trim();
+      if (want.length != 64) return;
+      final rc = JsbClient.instance.integrityCheck(want);
+      BootLog.instance.write('[11] integrity rc=$rc');
+    } catch (e) {
+      // 资产缺失（本地 dev 构建）不是错误，忽略
     }
   }
 

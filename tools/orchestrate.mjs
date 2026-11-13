@@ -38,9 +38,10 @@ const tag = (s, col) => `${col}${s}${c.x}`.padEnd(24)
 const STEPS = [
   { id: 'doctor', deps: [], bin: 'node', desc: '工具链体检', out: [] },
 
-  { id: 'idl', deps: ['doctor'], bin: 'flatc', desc: '模块21 FlatBuffers 代码生成',
-    cmd: () => ['flatc', '--cpp', '--dart', '--rust', '--go', '--gen-object-api', '-o', at('gen'), ...fbs()],
-    out: ['gen'], inputs: ['idl'] },
+  { id: 'idl', deps: ['doctor'], bin: 'flatc', desc: '模块21 代码生成 + 契约真源校验',
+    cmd: () => ['bash', '-c',
+      `flatc --cpp --dart --rust --go --gen-object-api -o "${at('gen')}" ${fbs().join(' ')} && node tools/verify-idl.mjs`],
+    out: ['gen'], inputs: ['idl', 'tools/verify-idl.mjs'] },
 
   { id: 'zig', deps: ['doctor'], bin: 'zig', desc: '模块4 分配器静态库',
     cmd: () => ['zig', 'build', '-Dtarget=aarch64-linux-android', '-Doptimize=ReleaseFast', '--prefix', at('zig')],
@@ -59,8 +60,8 @@ const STEPS = [
       '  cp -fv "target/aarch64-linux-android/release/lib$n.so" "$dst/"; done'],
     env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['rust'], inputs: ['rust'] },
 
-  { id: 'go', deps: ['doctor'], bin: 'gomobile', desc: '模块5 搜歌 AAR',
-    cmd: () => ['bash', 'build-aar.sh'],
+  { id: 'go', deps: ['doctor'], bin: 'go', desc: '模块5/9 C ABI 取流库（Go + TLS）',
+    cmd: () => ['bash', 'build.sh'],
     cwd: 'go', env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, ANDROID_HOME: process.env.ANDROID_HOME || '', ANDROID_SDK_ROOT: process.env.ANDROID_SDK_ROOT || '' }), out: ['go'], inputs: ['go'] },
 
   { id: 'ts', deps: ['doctor'], bin: 'npm', desc: '模块6 TS 清洗层 → cleaner.mjs',
@@ -78,10 +79,13 @@ const STEPS = [
     cmd: () => ['bash', 'core/build-native.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT, YIEYU_OFFLINE_ASSETS: OFFLINE ? 'ON' : 'OFF' }),
     out: ['native'], inputs: ['core', 'idl', 'out/go', 'out/rust'] },
 
+  { id: 'obfuscate', deps: ['native'], bin: 'node', desc: '模块11 链接后混淆 + 自校验摘要',
+    cmd: () => ['node', 'tools/obfuscate.mjs'], out: ['obfuscate'], inputs: ['out/native/arm64'] },
+
   { id: 'gradle', deps: ['native'], bin: 'gradle', desc: '模块22 Kotlin 前台服务 AAR',
     cmd: () => ['gradle', '-p', 'android', ':platform-service:assembleRelease'], out: ['android'], inputs: ['android'] },
 
-  { id: 'flutter', deps: ['native', 'go', 'ts', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
+  { id: 'flutter', deps: ['obfuscate', 'go', 'ts', 'wasm', 'lua', 'gradle'], bin: 'flutter', desc: '模块1/2 出 APK',
     cmd: () => ['bash', 'app/build-app.sh'], env: () => ({ ...androidEnv(), YIEYU_OUT: OUT }), out: ['apk'], inputs: ['app', 'out/native/arm64', 'out/rust', 'out/go', 'out/ts', 'out/wasm'] },
 
   { id: 'verify', deps: ['flutter'], bin: 'node', desc: '产物清单 + sha256 + 体积',

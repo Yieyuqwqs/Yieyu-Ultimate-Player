@@ -65,7 +65,7 @@ jobs:
         # ⚠️ 必须是块标量（run: |）。写成单行标量再追加缩进行，YAML 会把两行折叠成
         #    一条命令：chmod +x a b chmod +x c → "chmod: cannot access 'chmod'"（踩过）
         run: |
-          chmod +x build.sh core/build-native.sh app/build-app.sh go/build-aar.sh
+          chmod +x build.sh core/build-native.sh app/build-app.sh go/build.sh
           chmod +x app/patch_manifest.mjs app/patch_gradle.mjs tools/make-patch.mjs
 
       - name: 0.2 变更检测（决定编哪些模块）
@@ -172,16 +172,13 @@ jobs:
           echo "NDK 版本: $(basename "$ANDROID_NDK_LATEST_HOME")"
           echo "NDK=$ANDROID_NDK_LATEST_HOME"
 
-      - name: 12. ccache / flatc / gomobile
+      - name: 12. ccache / flatc
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ccache flatbuffers-compiler zip unzip
           ccache --version | head -1
           flatc --version
           zig version
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init
 
       - name: 12.5 LuaJIT（模块 7，编不出来就降级，不阻塞）
         run: |
@@ -236,8 +233,16 @@ jobs:
           echo "--- 16KB 对齐检查 ---"
           $RE -lW $SO | grep LOAD | head -5
           echo "✓ 动态依赖 OK"
-      - name: 16. 打包 APK（内部按指纹跳过未变模块）
+      - name: 16. 打包 APK（内部按指纹跳过未变模块；flutter 依赖链里含模块11 混淆）
         run: ./build.sh flutter && ./build.sh verify
+
+      - name: 16.5 混淆/防篡改产物核对
+        run: |
+          # 自校验摘要必须是构建期真实生成的 sha256（占位符 = 这一步没跑，等于没有防篡改）
+          grep -qE "^[0-9a-f]{64}$" app/assets/integrity/libyieyu_core.sha256 || {
+            echo "✗ app/assets/integrity/libyieyu_core.sha256 不是 64 位 hex" >&2; exit 1; }
+          echo "自校验摘要：$(cat app/assets/integrity/libyieyu_core.sha256)"
+          test -f out/obfuscate/report.md && cat out/obfuscate/report.md
 
       - name: 17. 增量补丁包
         run: |

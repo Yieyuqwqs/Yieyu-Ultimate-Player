@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import 'jsb_ops.dart';
+
 /// 【模块 24】JSB 的 Dart 侧。
 ///
 /// 关键事实：Dart ↔ C++ 走 **dart:ffi**，没有 JNI、没有平台通道、没有编解码。
@@ -111,6 +113,13 @@ typedef _SearchNative = Int32 Function(Pointer<Utf8>);
 typedef _SearchDart = int Function(Pointer<Utf8>);
 typedef _PlaySongNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _PlaySongDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _StrIntNative = Int32 Function(Pointer<Utf8>);
+typedef _StrIntDart = int Function(Pointer<Utf8>);
+typedef _BufIntNative = Int32 Function(Pointer<Utf8>, IntPtr);
+typedef _BufIntDart = int Function(Pointer<Utf8>, int);
+typedef _IntIntNative = Int32 Function();
+typedef _IntIntDart = int Function();
+
 class JsbClient {
   JsbClient._();
 
@@ -174,6 +183,16 @@ class JsbClient {
   late final _PlaySongDart _playSongFn =
       _lib.lookupFunction<_PlaySongNative, _PlaySongDart>('Yieyu_PlaySong');
 
+  // ── [11] 防篡改自校验 / [19][20] 存储两侧计数 ────────────────────
+  late final _StrIntDart _integrityChk =
+      _lib.lookupFunction<_StrIntNative, _StrIntDart>('Yieyu_IntegrityCheck');
+  late final _BufIntDart _selfDigest =
+      _lib.lookupFunction<_BufIntNative, _BufIntDart>('Yieyu_SelfDigest');
+  late final _IntIntDart _kvCount =
+      _lib.lookupFunction<_IntIntNative, _IntIntDart>('Yieyu_KvCount');
+  late final _IntIntDart _storeCount =
+      _lib.lookupFunction<_IntIntNative, _IntIntDart>('Yieyu_StoreCount');
+
   final _snapCtrl = StreamController<YieyuSnapshot>.broadcast();
   final _songCtrl = StreamController<List<Map<String, Object?>>>.broadcast();
   final _msgCtrl = StreamController<String>.broadcast();   // 搜索进度/失败原因（只给界面说人话）
@@ -234,16 +253,21 @@ class JsbClient {
       ));
     }
 
-    // ② 事件帧：'S'=搜索结果 JSON / 'E'=错误文案
-    //    帧格式 [0]=类型 [1..4]=小端长度 [5..]=UTF-8（与 core/src/pipeline/engine.cpp 一致）
+    // ② 事件帧（[21] 契约）：40 字节头 + UTF-8 载荷
+    //    头： magic "YFRM" | version u16 | channels=事件类型 u16 | sampleRate u32 | frames=载荷长度 u32
     final ep = _evtPtr!;
     final got = _poll(ep, _evtCap);
-    if (got < 5) return;
+    if (got < JsbOps.headerBytes) return;
     final view = ep.asTypedList(got);
-    final type = view[0];
-    final len = view[1] | (view[2] << 8) | (view[3] << 16) | (view[4] << 24);
-    if (len <= 0 || 5 + len > got) return;
-    final payload = utf8.decode(view.sublist(5, 5 + len), allowMalformed: true);
+    if (view[0] != 0x59 || view[1] != 0x46 || view[2] != 0x52 || view[3] != 0x4D) return;
+    final bd = ByteData.sublistView(view);
+    final type = bd.getUint16(6, Endian.little);
+    final len = bd.getUint32(12, Endian.little);
+    if (len == 0 || JsbOps.headerBytes + len > got) return;
+    final payload = utf8.decode(
+      view.sublist(JsbOps.headerBytes, JsbOps.headerBytes + len),
+      allowMalformed: true,
+    );
 
     if (type == 0x53) {
       // 'S'：搜索结果（JSON 数组）
@@ -261,10 +285,37 @@ class JsbClient {
         _msgCtrl.add('结果解析失败');
       }
     } else if (type == 0x45) {
-      // 'E'：错误文案（只进开发者面板/状态行，不进正常 UI 的错误弹窗）
+      // 'E'：错误文案（只进状态行/开发者面板，不进正常 UI 的错误弹窗）
       _msgCtrl.add('搜索失败');
     }
   }
+
+  /// [11] 用构建期摘要校验自身 so：1=一致 0=被改 -1=取不到自身。
+  int integrityCheck(String expectHex) {
+    final h = expectHex.toNativeUtf8();
+    try {
+      return _integrityChk(h);
+    } catch (_) {
+      return -1;
+    } finally {
+      malloc.free(h);
+    }
+  }
+
+  /// [11] 自己算出来的摘要（诊断面板对照用）
+  String? selfDigest() {
+    final buf = malloc.allocate<Utf8>(80);
+    try {
+      return _selfDigest(buf, 80) == 0 ? buf.toDartString() : null;
+    } catch (_) {
+      return null;
+    } finally {
+      malloc.free(buf);
+    }
+  }
+
+  int kvCount() => _kvCount();
+  int storeCount() => _storeCount();
 
   /// 导出黑匣子日志。返回最终目录；失败返回 null。
   /// ★ UI 拿到这个路径只允许显示"已导出"，不许把路径/异常原文怼给用户。

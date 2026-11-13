@@ -9,9 +9,11 @@
 #include "../common/log.h"
 #include "../common/blackbox.h"
 #include "../common/app_paths.h"
+#include "../common/integrity.h"
 #include "../dsp/dsp.h"
+#include "../ipc/flatbuf_codec.h"
 #include "../sensor/gyro_asensor.h"
-#include "../store/sqlite_kv.h"
+#include "../store/kv_store.h"
 #include "../audio/aaudio_sink.h"
 #include "../script/lua_sandbox.h"
 #include "player.h"
@@ -24,10 +26,9 @@ void  yieyu_fetch_free(char* p);
 }
 #endif
 
-// [10] 验签：Rust + ring 编的 libyieyu_license.so（以前只编、不进包，也从来没被调用）
-// ★ 不做静态链：Rust cdylib 没有 SONAME，链进 core 会把绝对路径写进 DT_NEEDED，
-//   装机 dlopen 必炸（CI 15.5 就是拦这个）。运行时 dlopen 更稳，缺库也不崩。
-#ifdef YIEYU_HAVE_LICENSE
+// [10] 验签 / [19] 只读库：Rust 编的 cdylib，运行时 dlopen（不做静态链：
+// cdylib 没有 SONAME，链进 core 会把绝对路径写进 DT_NEEDED，装机 dlopen 必炸）。
+#if defined(YIEYU_HAVE_LICENSE) || defined(YIEYU_HAVE_STORE)
 #include <dlfcn.h>
 #endif
 
@@ -49,7 +50,7 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   // ⓪ 路径先定死（唯一真相），再起黑匣子：之后任何模块要写盘都问 app_paths
   const int pub = yp_init(filesDir);
   if (bb_init(yp_home()) != 0) {
-    // 连私有目录都写不进：没有日志可落，但 App 仍要起来（UI 静默，原因在 dmesg 之外看不到）
+    // 连私有目录都写不进：没有日志可落，但 App 仍要起来
   }
   if (!pub) {
     bb_write(YIEYU_LOG_ERROR, "[0] 公共目录不可写，运行目录落在私有目录：%s", yp_home());
@@ -67,9 +68,6 @@ int Engine::Boot(const char* filesDir, const char* abi) {
   }
 
   // ① [10] 验签：唯一密钥在这里，Kotlin/Dart/Lua 一律不持有。
-  //    以前是 `const bool licensed = true;` —— 也就是说这整个模块是摆设。
-  //    现在真的去问 Rust/ring 编的库：没有库、或库里没有内嵌公钥，都在 Stats 与
-  //    黑匣子里留痕（本地自用阶段不熔断，但绝不再假装"验过了"）。
   bool licensed = true;
 #ifdef YIEYU_HAVE_LICENSE
   {
@@ -101,25 +99,65 @@ int Engine::Boot(const char* filesDir, const char* abi) {
 #endif
   if (!licensed) {
     state_.store(State::kUnlicensed);
-    bb_write(YIEYU_LOG_ERROR, "[10] 验签失败 → 熔断（停解码/清环/置灰），trace=%s", bb_trace());
-    LOGW("license fail → 熔断：停解码、清 PCM 环、UI 置灰（不崩进程）");
-    return 0;  // 注意：返回 0，UI 仍要起来（退款提示页）
+    bb_write(YIEYU_LOG_ERROR, "[10] 验签失败 → 熔断，trace=%s", bb_trace());
+    return 0;
   }
 
-  // ② [20] 打开 SQLite（唯一写者，WAL）
-  if (sqlite_kv_open(yp_data()) != 0) {
+  // ② [20] 打开本地存储（唯一写者），并恢复上次会话
+  if (kv_open(yp_data()) != 0) {
     state_.store(State::kFault);
-    bb_write(YIEYU_LOG_FATAL, "[20] SQLite 打开失败，dir=%s", filesDir ? filesDir : "?");
+    bb_write(YIEYU_LOG_FATAL, "[20] 存储打不开 dir=%s（%s）", yp_data(), kv_last_error());
     return -2;
   }
-  sqlite_kv_load_session();
+  {
+    char buf[512];
+    int n = kv_get("vol", buf, (int)sizeof(buf) - 1);
+    if (n > 0) {
+      buf[n] = 0;
+      const float v = (float)std::strtod(buf, nullptr);
+      if (v >= 0.0f && v <= 1.0f) { vol_.store(v); Player::Instance().SetVolume(v); }
+    }
+    n = kv_get("dsp", buf, (int)sizeof(buf) - 1);
+    if (n > 0) {
+      buf[n] = 0;
+      const int on = std::atoi(buf);
+      dspOn_.store(on ? 1 : 0);
+      Player::Instance().SetDsp(on != 0);
+    }
+    n = kv_get("last_uri", buf, (int)sizeof(buf) - 1);
+    if (n > 0) { buf[n] = 0; lastUri_.assign(buf, (size_t)n); }
+  }
 
-  // ③ [23] 陀螺仪（8D 用；没有传感器就静默降级，不外抛）
+  // ③ [19] 只读库：可选；缺库只是少一个诊断视角，不许影响启动
+#ifdef YIEYU_HAVE_STORE
+  {
+    storeLib_ = dlopen("libyieyu_store.so", RTLD_NOW | RTLD_LOCAL);
+    if (storeLib_) {
+      typedef int (*open_fn)(const char*);
+      open_fn op = nullptr;
+      *reinterpret_cast<void**>(&op) = dlsym(storeLib_, "yieyu_store_open");
+      if (op && kv_path() && *kv_path()) {
+        const int rc = op(kv_path());
+        if (rc != 0) bb_write(YIEYU_LOG_ERROR, "[19] 只读库打不开 %s rc=%d", kv_path(), rc);
+        typedef int (*count_fn)(void);
+        count_fn cf = nullptr;
+        *reinterpret_cast<void**>(&cf) = dlsym(storeLib_, "yieyu_store_count");
+        storeEntries_.store(cf ? cf() : -1);
+      }
+    } else {
+      const char* e = dlerror();
+      bb_write(YIEYU_LOG_ERROR, "[19] dlopen libyieyu_store.so 失败：%s", e ? e : "?");
+      storeLib_ = nullptr;
+    }
+  }
+#else
+  storeEntries_.store(-1);
+#endif
+
+  // ④ [23] 陀螺仪（8D 用；没有传感器就静默降级，不外抛）
   gyro_start(200 /* Hz */);
 
-  // ④ [7] Lua 沙箱：**必须在这里点火**。
-  //    上一版全仓没人调 lua_sandbox_init() → g_L 永远是 nullptr → 任何脚本调用都返回 -1，
-  //    脚本"导入成功"却永远执行不了。启动时再扫一遍脚本目录，App 重启后不用重新导入。
+  // ⑤ [7] Lua 沙箱：必须在这里点火（启动时再扫一遍脚本目录，重启后不用重新导入）
   if (lua_sandbox_init(yp_scripts()) != 0) {
     bb_write(YIEYU_LOG_ERROR, "[7] Lua 沙箱初始化失败（脚本将不可用）dir=%s", yp_scripts());
   } else {
@@ -130,14 +168,25 @@ int Engine::Boot(const char* filesDir, const char* abi) {
     }
   }
 
+  // ⑥ [11] 自校验：只记录结果（期望摘要在 APK 资产里，由 M1 调 Yieyu_IntegrityCheck 传进来）
+  (void)yieyu_self_digest(selfDigest_);
+
   state_.store(State::kReady);
-  LOGI("engine ready abi=%s sr=%d", abi, Player::Instance().SampleRate());
   return 0;
+}
+
+void Engine::SaveSession() {
+  char buf[64];
+  std::snprintf(buf, sizeof(buf), "%.6f", (double)vol_.load());
+  kv_put("vol", buf, (int)std::strlen(buf));
+  const int on = dspOn_.load() ? 1 : 0;
+  kv_put("dsp", on ? "1" : "0", 1);
+  if (!lastUri_.empty()) kv_put("last_uri", lastUri_.data(), (int)lastUri_.size());
+  kv_flush();
 }
 
 void Engine::Shutdown() {
   // 搜歌线程先停：它可能正阻塞在网络上，只置标志 + 唤醒，join 会卡住退出。
-  // 线程本身在创建时就 detach 了，这里不需要也不允许再 join。
   {
     std::lock_guard<std::mutex> lk(searchMu_);
     searchQuit_ = true;
@@ -147,31 +196,61 @@ void Engine::Shutdown() {
 
   Player::Instance().Shutdown();
   gyro_stop();
-  sqlite_kv_close();
+  SaveSession();                       // [20] 会话落盘（音量 / 音效开关 / 上次曲目）
+#ifdef YIEYU_HAVE_STORE
+  if (storeLib_) {
+    typedef void (*close_fn)(void);
+    close_fn cf = nullptr;
+    *reinterpret_cast<void**>(&cf) = dlsym(storeLib_, "yieyu_store_close");
+    if (cf) cf();
+    dlclose(storeLib_);
+    storeLib_ = nullptr;
+    storeEntries_.store(-1);
+  }
+#endif
+  kv_close();
   lua_sandbox_shutdown();
   bb_flush();
   bb_shutdown();
   state_.store(State::kIdle);
 }
 
-int Engine::PlayUrl(const char* uri) { return Player::Instance().PlayUrl(uri); }
+int Engine::PlayUrl(const char* uri) {
+  if (uri && *uri) {
+    std::lock_guard<std::mutex> lk(evtMu_);
+    lastUri_.assign(uri);              // 只缓存，落盘在 SaveSession（避免拖动进度就写盘）
+  }
+  return Player::Instance().PlayUrl(uri);
+}
 void Engine::PauseAudio() { Player::Instance().Pause(); }
 void Engine::ResumeAudio() { Player::Instance().Resume(); }
 void Engine::StopAudio() { Player::Instance().Stop(); }
 int  Engine::SeekMs(int64_t ms) { return Player::Instance().SeekMs(ms); }
-void Engine::SetVolume(float v) { Player::Instance().SetVolume(v); }
+void Engine::SetVolume(float v) { vol_.store(v); Player::Instance().SetVolume(v); }
 void Engine::PlayerError(char* out, size_t cap) const { Player::Instance().LastError(out, cap); }
-void Engine::SetDsp(bool on) { Player::Instance().SetDsp(on); }
+void Engine::SetDsp(bool on) { dspOn_.store(on ? 1 : 0); Player::Instance().SetDsp(on); }
 void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
 void Engine::SetTone(bool tube, bool vinyl, bool lpf, float drive) {
   Player::Instance().SetTone(tube, vinyl, lpf, drive);
 }
 
+// ── [11] 防篡改 ──────────────────────────────────────────────────────
+const char* Engine::SelfDigest() { return selfDigest_; }
+
+int Engine::IntegrityCheck(const char* expectHex) {
+  const int rc = yieyu_integrity_check(expectHex);
+  integ_.store(rc);
+  if (rc == 0) bb_write(YIEYU_LOG_ERROR, "[11] 完整性校验不通过：自身 so 与构建期摘要不一致");
+  return rc;
+}
+
+int Engine::KvCount() const { return kv_count(); }
+int Engine::StoreCount() const { return storeEntries_.load(); }
+
 // ── [5] 搜歌：控制面只投递关键字，网络在独立线程跑 ────────────────────
 int Engine::Search(const char* keyword) {
   if (!keyword) return -1;
   std::string kw(keyword);
-  // 去掉首尾空白（中文关键字 copy 过来也安全）
   size_t b = 0;
   while (b < kw.size() && (kw[b] == ' ' || kw[b] == '\t' || kw[b] == '\r' || kw[b] == '\n')) ++b;
   kw.erase(0, b);
@@ -217,7 +296,6 @@ void Engine::SearchWorker() {
       yieyu_fetch_free(js);
     }
     if (body.empty()) body = "[]";
-    bb_write(YIEYU_LOG_ERROR, "[5] 搜歌 %.40s：%zu 字节", kw.c_str(), body.size());
     PushEvent('S', body);
 #else
     PushEvent('E', "本次构建没带 libyieyu_fetch.so（搜歌不可用）");
@@ -231,26 +309,23 @@ void Engine::PushEvent(char type, const std::string& payload) {
   evtPayload_ = payload;
 }
 
-// 事件帧：[0] 类型（'S' 搜索结果 / 'E' 错误文案）[1..4] 小端长度 [5..] UTF-8
+// 事件帧（[21] 契约）：40 字节头（magic "YFRM"，channels=事件类型，frames=载荷长度）+ UTF-8 载荷
 size_t Engine::DrainEvents(uint8_t* out, size_t cap) {
-  if (!out || cap < 5) return 0;
+  if (!out || cap < (size_t)kFrameHeaderBytes) return 0;
   std::lock_guard<std::mutex> lk(evtMu_);
   if (evtType_ == 0) return 0;
   const size_t n = evtPayload_.size();
-  if (5 + n > cap) {                     // 装不下就丢掉，别给 Dart 半截 JSON
+  if ((size_t)kFrameHeaderBytes + n > cap) {     // 装不下就丢掉，别给 Dart 半截 JSON
     evtType_ = 0;
     evtPayload_.clear();
     return 0;
   }
-  out[0] = (uint8_t)evtType_;
-  out[1] = (uint8_t)(n & 0xff);
-  out[2] = (uint8_t)((n >> 8) & 0xff);
-  out[3] = (uint8_t)((n >> 16) & 0xff);
-  out[4] = (uint8_t)((n >> 24) & 0xff);
-  if (n) std::memcpy(out + 5, evtPayload_.data(), n);
+  codec_write(out, (int)cap, kMagicFrame, (uint16_t)YIEYU_JSB_ABI,
+              (uint16_t)(uint8_t)evtType_, 0, (uint32_t)n, ++evtSeq_, 0);
+  if (n) std::memcpy(out + kFrameHeaderBytes, evtPayload_.data(), n);
   evtType_ = 0;
   evtPayload_.clear();
-  return 5 + n;
+  return (size_t)kFrameHeaderBytes + n;
 }
 
 int Engine::PlaySong(const char* source, const char* musicId, const char* mid) {
@@ -260,24 +335,37 @@ int Engine::PlaySong(const char* source, const char* musicId, const char* mid) {
   if (!*id && !*m) return -1;
   char uri[512];
   std::snprintf(uri, sizeof(uri), "yieyu://song?source=%s&id=%s&mid=%s", src, id, m);
-  return Player::Instance().PlayUrl(uri);
+  return PlayUrl(uri);
 }
 
-// 下行命令帧：'YJSC' + op  (+3 字节预留) + UTF-8 载荷（与 app/lib/jsb/jsb_ops.dart 一致）
-int Engine::HandleCommand(const uint8_t* fbs, size_t len) {
-  if (!fbs || len < 8) return -1;
-  if (!(fbs[0] == 'Y' && fbs[1] == 'J' && fbs[2] == 'S' && fbs[3] == 'C')) return -2;
-  const uint8_t op = fbs[4];
-  const char* payload = (len > 8) ? reinterpret_cast<const char*>(fbs + 8) : "";
+// 下行命令帧（[21] 契约）：40 字节头（magic "YJSC"，channels=op，frames=载荷长度）+ UTF-8 载荷
+int Engine::HandleCommand(const uint8_t* frame, size_t len) {
+  const int chk = codec_check(frame, (int)len, kMagicCmd);
+  if (chk != 0) return chk == -3 ? -3 : -2;
+  const uint8_t op = (uint8_t)(codec_u16(frame, kOffChannels) & 0xFFu);
+  const uint32_t plen = codec_u32(frame, kOffFrames);
+  if ((size_t)kFrameHeaderBytes + (size_t)plen > len) return -4;
+  char slot[516];
+  const char* payload = "";
+  if (plen > 0) {
+    const size_t take = plen < sizeof(slot) - 1 ? plen : sizeof(slot) - 1;
+    std::memcpy(slot, frame + kFrameHeaderBytes, take);
+    slot[take] = 0;
+    payload = slot;
+  }
+  // op 编号 = idl/jsb.fbs 的 enum Op（0=NONE 起算）；Dart 的 enum JsbOp 与这里必须同序
   switch (op) {
-    case 0: ResumeAudio(); return 0;                     // play（继续当前曲目）
-    case 1: PauseAudio();  return 0;                     // pause
-    case 2: return 0;                                    // next（放什么归模块 1）
-    case 3: return 0;                                    // prev
-    case 4: return Search(payload);                      // search
-    case 5: return SeekMs(std::strtoll(payload, nullptr, 10));
-    case 6: return 0;                                    // eqPresetNext
-    case 7: return 0;                                    // setEqBand
+    case 0: return 0;                                    // NONE
+    case 1: ResumeAudio(); return 0;                     // PLAY（继续当前曲目）
+    case 2: PauseAudio();  return 0;                     // PAUSE
+    case 3: return 0;                                    // NEXT（放什么归模块 1）
+    case 4: return 0;                                    // PREV
+    case 5: return Search(payload);                      // SEARCH
+    case 6: return SeekMs(std::strtoll(payload, nullptr, 10));  // SEEK
+    case 7: return 0;                                    // EQ_PRESET_NEXT
+    case 8: return 0;                                    // SET_EQ_BAND
+    case 9: return 0;                                    // LICENSE
+    case 10: return 0;                                   // LOAD_PLUGIN
     default: return 0;
   }
 }
@@ -290,7 +378,6 @@ int Engine::Snapshot(Yieyu_Snapshot* out) {
   out->durationMs = p.DurationMs();
   out->peakL      = p.PeakL();
   out->peakR      = p.PeakR();
-  // [17] 31 段 EQ 的真实曲线（以前 eqPoints 写死 31、eqDb 一个字节都没填 → 曲线永远平）
   out->eqPoints   = eq31_points(out->eqDb);
   return 0;
 }
@@ -307,11 +394,13 @@ void Engine::OnSystemAction(int actionId) {
 void Engine::Stats(char* out, size_t cap) {
   Player& p = Player::Instance();
   std::snprintf(out, cap,
-                "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld lic=%d",
+                "state=%d sr=%d pos=%lld dur=%lld st=%d underrun=%d ring=%zu/%zu wfail=%d chunks=%lld "
+                "lic=%d integ=%d kv=%d store=%d",
                 (int)state_.load(), (int)p.SampleRate(), (long long)p.PositionMs(),
                 (long long)p.DurationMs(), p.State(), (int)yieyu_aaudio_underruns(),
                 p.RingReadable(), p.RingCapacity(), (int)p.RingWriteFails(),
-                (long long)p.DecodedChunks(), (int)lic_.load());
+                (long long)p.DecodedChunks(), (int)lic_.load(), (int)integ_.load(),
+                kv_count(), (int)storeEntries_.load());
 }
 
 }  // namespace yieyu

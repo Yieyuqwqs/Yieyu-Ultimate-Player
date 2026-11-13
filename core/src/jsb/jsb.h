@@ -103,4 +103,15 @@ YIEYU_API int Yieyu_ScriptCall(const char* script, const char* fn,
 //   返回 0=成功，-1=参数错，-2=触发黑名单，-3=写盘失败，-4=超限(>512KB)
 YIEYU_API int Yieyu_ImportScript(const char* name, const uint8_t* data, int len);
 
+
+// ── ⑪ [11] 防篡改自校验（期望摘要由构建期生成，随 APK 资产下发）─────────
+//   IntegrityCheck: 1=一致 0=磁盘上的 so 被改过 -1=取不到自身
+//   SelfDigest: 把自己 .so 的 sha256 写成 64 位小写 hex
+YIEYU_API int Yieyu_IntegrityCheck(const char* expectHex);
+YIEYU_API int Yieyu_SelfDigest(char* out, size_t cap);
+
+// ── ⑫ 存储两侧计数（[20] 写者 / [19] 只读库），诊断面板用 ─────────────
+YIEYU_API int Yieyu_KvCount(void);
+YIEYU_API int Yieyu_StoreCount(void);
+
 }

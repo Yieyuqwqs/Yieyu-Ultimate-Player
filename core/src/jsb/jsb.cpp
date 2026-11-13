@@ -275,4 +275,21 @@ void Yieyu_Stats(char* out, size_t cap) {
 #endif
 }
 
+
+// ── [11] 防篡改自校验：期望摘要随 APK 资产下来（构建期由 tools/obfuscate.mjs 生成）
+int Yieyu_IntegrityCheck(const char* expectHex) {
+  if (!expectHex || !*expectHex) return -1;
+  return yieyu::Engine::Instance().IntegrityCheck(expectHex);
+}
+
+int Yieyu_SelfDigest(char* out, size_t cap) {
+  if (!out || cap == 0) return -1;
+  std::snprintf(out, cap, "%s", yieyu::Engine::Instance().SelfDigest());
+  return out[0] ? 0 : -1;
+}
+
+// ── [19]/[20] 存储两侧各自数到几个键（诊断面板看，正常界面不显示）
+int Yieyu_KvCount(void) { return yieyu::Engine::Instance().KvCount(); }
+int Yieyu_StoreCount(void) { return yieyu::Engine::Instance().StoreCount(); }
+
 }  // extern "C"

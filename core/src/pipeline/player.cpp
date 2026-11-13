@@ -8,6 +8,8 @@
 #include "../audio/aaudio_sink.h"
 #include "../audio/demux_platform.h"
 #include "../dsp/dsp.h"
+#include "../sensor/gyro_asensor.h"   // [23] 姿态 → [17] 8D
+#include "../store/kv_store.h"        // [20] 播放进度落盘
 #include "../common/log.h"
 #include "../common/blackbox.h"
 #include "../net/song_uri.h"   // yieyu://song?... → 真直链
@@ -254,7 +256,23 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
 
   state_.store(kPlaying);
 
+  int64_t savedMs = -1;
   for (;;) {
+    // ⓪ [23]→[17]：每块读一次姿态快照（非阻塞原子读），头追/自动旋转共用同一入口
+    {
+      float yaw = 0.0f, pitch = 0.0f, roll = 0.0f;
+      if (gyro_read(&yaw, &pitch, &roll) == 0) hrtf8d_set_pose(yaw, pitch, 0);
+    }
+    // ⓪ [20] 播放进度：最多每 2 秒写一次（写者是 M20，音频线程一行都不碰）
+    {
+      const int64_t nowMs = PositionMs();
+      if (nowMs / 2000 != savedMs / 2000) {
+        savedMs = nowMs;
+        char buf[32];
+        const int n = std::snprintf(buf, sizeof(buf), "%lld", (long long)nowMs);
+        kv_put("pos", buf, n);
+      }
+    }
     // ① 换曲 / 停止 / 退出
     {
       std::lock_guard<std::mutex> lk(mu_);

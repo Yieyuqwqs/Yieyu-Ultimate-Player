@@ -1,31 +1,20 @@
-# third_party · 只放"怎么拿"，不放代码
+# third_party —— 空目录（这是刻意的）
 
-二进制不进仓库（体积 + 许可证 + 供应链透明）。`./build.sh` 在 `YIEYU_OFFLINE_ASSETS=ON` 时走空实现；
-要真编，按下面把依赖放到指定路径。
+本工程**不引任何第三方二进制**：FFmpeg、libcurl、SQLite、Eigen、SpeexDSP、WasmEdge、
+ONNX Runtime 全部不用。需要的功能都在树内自己实现，理由只有一条：
+手机本机编不了、CI 每次都要下载上 GB 交叉编译产物、版本漂移还会把 `DT_NEEDED` 写坏
+（历史上就踩过"NEEDED 里出现绝对路径 → 装机 dlopen 必炸"）。
 
-| 模块 | 依赖 | 版本锚点 | 落位 | 许可证 | 备注 |
-|---|---|---|---|---|---|
-| 13 | **FFmpeg** | n7.0.2 | `third_party/ffmpeg/<abi>/{include,lib}` | LGPL-2.1+（**不带 --enable-gpl**） | NDK r27 编出，必须 `c++_shared` |
-| 14 | **SpeexDSP** | 1.2.1 | `third_party/speexdsp/<abi>/{include,lib}` | BSD-3 | 替代 JUCE：单库 300KB，实时无锁重采样 |
-| 15 | AAudio | NDK 自带 | — | Apache-2.0 | minSdk 26 |
-| 16 | **Eigen** | 3.4.0 | `third_party/eigen/Eigen/` | MPL2 | header-only |
-| 17 | 无（自研） | — | — | — | 线程池 + 31 段 EQ + 胆机 + 黑胶 |
-| 18 | **ONNX Runtime** | 1.19.2 (android arm64) | `third_party/onnxruntime/` | MIT | 只 arm64 |
-| 7 | **LuaJIT** | 2.1-20240815 | `third_party/lua/` | MIT | arm64 无官方预编译，需自编 |
-| 8 | **WasmEdge** | 0.13.5 | `third_party/wasmedge/` | Apache-2.0 | 关 JIT 编（Android W^X） |
-| 9 | **libcurl** | 8.9.1 | `third_party/curl/` | MIT-like | SSL 接 BoringSSL 或关掉，二选一 |
-| 20 | **SQLite** | 3.46.1 | `third_party/sqlite/` | Public Domain | 开 WAL |
-| 21 | **FlatBuffers** | 24.3.25 | `third_party/flatbuffers/`（`include/` + `flatc`） | Apache-2.0 | 生成代码进 `out/gen` |
-| 10/19 | crate 依赖 | 见 `rust/Cargo.toml` | — | ring: ISC/Apache-2.0 | — |
-| 5 | Go stdlib | 1.22 | — | BSD-3 | 无第三方依赖 |
+| 原本要引的库 | 现在的实现 | 位置 |
+|---|---|---|
+| FFmpeg | NDK `mediandk`（系统解码器）+ 自研 DSF/DFF 解码 | `core/src/audio/demux_platform.c`、`dsd.cpp` |
+| libcurl | 自研 socket HTTP/1.1 客户端（http），https 走 Go 的 TLS 桥 | `core/src/net/stream_http.c` |
+| SQLite | 自研追加日志 KV（CRC + 断电截断 + 压实） | `core/src/store/kv_store.cpp` |
+| SQLx | 自研 tokio 只读库（同一文件格式） | `rust/store-read/` |
+| Eigen | 自研多相 FIR（DSD 抽取 + 重采样） | `core/src/audio/resampler.cpp`、`dsd.cpp` |
+| SpeexDSP | 同上（有理数比例多相重采样，窗函数 sinc） | `core/src/audio/resampler.cpp` |
+| WasmEdge | 自研 wasm MVP 解释器 + 自研插件生成器 | `core/src/wasm/wasm_interp.cpp`、`tools/mkwasm.mjs` |
+| ONNX Runtime | 自研离线人声消除（STFT 中置抑制），核系数由 Python 生成 | `core/src/ai/vocals.cpp`、`python/vocal_remover/design.py` |
+| Obfuscator-LLVM | 链接后处理：符号重命名 + strip + 自校验摘要 | `tools/obfuscate.mjs`、`core/src/common/integrity.cpp` |
 
-## 一键拉取
-
-`tools/fetch-deps.mjs` 现在**故意没有**。骨架阶段先让"空实现能编过"，等契约稳了再钉死版本；
-到那时它是唯一允许下载二进制的入口，每个文件带 sha256 校验。
-
-## 许可证红线
-
-- ~~JUCE AGPLv3~~：**已换掉**（SpeexDSP，BSD-3）。这个项目是自己折腾用的，不做商业分发，版权焦虑归零。
-- **FFmpeg 别开 `--enable-gpl`**：开了整包 GPL，与闭源分发冲突。
-- Eigen 是 MPL2（文件级弱传染），静态链进 `.so` 没问题，但必须保留声明。
+**这里永远只放"怎么拿"的说明，不放代码、不放二进制。**

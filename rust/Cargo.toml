@@ -1,7 +1,7 @@
 # 模块 3 / 10 / 19。三个 crate 只干一件事，互不依赖。
 [workspace]
 resolver = "2"
-members = ["gesture-tokio", "license-ring", "store-sqlx"]
+members = ["gesture-tokio", "license-ring", "store-read"]
 
 [workspace.package]
 edition = "2021"
@@ -9,9 +9,8 @@ rust-version = "1.79"
 license = "MIT"
 
 [workspace.dependencies]
-tokio = { version = "1.39", default-features = false, features = ["rt-multi-thread", "time", "sync", "macros"] }
+tokio = { version = "1.39", default-features = false, features = ["rt", "time", "sync", "macros", "fs", "io-util"] }
 ring  = "0.17"
-sqlx  = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 
 [profile.release]
 opt-level = 3

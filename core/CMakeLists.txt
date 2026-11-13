@@ -75,7 +75,6 @@ endif()
 
 # ─── 第三方（见 third_party/README.md）────────────────────────────────
 if(NOT YIEYU_OFFLINE_ASSETS)
-  include(cmake/FindFFmpeg.cmake)
   # [14] SpeexDSP（BSD-3，替代 JUCE）：头文件 + 预编译静态库
   set(SPEEXDSP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/speexdsp/${ANDROID_ABI}"
       CACHE PATH "SpeexDSP 预编译根目录")
@@ -89,13 +88,14 @@ endif()
 
 # ─── 源文件：按模块分组，一眼看得见谁是谁 ─────────────────────────────
 set(SRC_COMMON  src/common/blackbox.cpp
-                src/common/app_paths.cpp)   # 路径唯一真相
+                src/common/app_paths.cpp            # 路径唯一真相
+                src/common/sha256.cpp               # [11] 自校验摘要
+                src/common/integrity.cpp)           # [11] + [12] 常数时间比对
 set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
                 src/jsb/jni_service.cpp)               # [22] 唯一 JNI 面
 set(SRC_PIPE    src/pipeline/engine.cpp
                 src/pipeline/player.cpp)                # 解码线程 + PCM 环调度
-set(SRC_AUDIO   src/audio/demux_ffmpeg.c               # [13] FFmpeg（有预编译库时）
-                src/audio/demux_platform.c             # [13] 平台兜底：AMediaExtractor+AMediaCodec
+set(SRC_AUDIO   src/audio/demux_platform.c             # [13] 平台兜底：AMediaExtractor+AMediaCodec
                 src/audio/resample_speex.cpp           # [14] SpeexDSP
                 src/audio/aaudio_sink.c                # [15]
                 src/audio/dsd_eigen.cpp)               # [16]
@@ -105,7 +105,7 @@ set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
 set(SRC_SENSOR  src/sensor/gyro_asensor.cpp)           # [23]
 set(SRC_NET     src/net/stream_curl.c                 # [9]
                 src/net/song_uri.cpp)                  # [5]/[9] yieyu://song → 真直链
-set(SRC_STORE   src/store/sqlite_kv.cpp)               # [20]
+set(SRC_STORE   src/store/kv_store.cpp)                # [20] 自研追加日志（唯一写者）
 set(SRC_IPC     src/ipc/flatbuf_codec.cpp)             # [21]
 set(SRC_SCRIPT  src/script/lua_sandbox.cpp)            # [7]
 set(SRC_WASM    src/wasm/host_wasmedge.cpp)            # [8]

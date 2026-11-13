@@ -24,7 +24,6 @@ need('4 / 12', 'zig', ['version'], 'zig cc 与 aarch64 交叉')
 need('3 / 10 / 19', 'cargo', ['--version'], 'Rust 三件套')
 need('3 / 10 / 19', 'rustup', ['--version'], '装 android target')
 need('5', 'go', ['version'], '>=1.22')
-need('5', 'gomobile', ['version'], 'go install golang.org/x/mobile/cmd/gomobile')
 need('1 / 2', 'flutter', ['--version'], 'Impeller 默认开')
 need('6', 'node', ['-v'], '>=18，构建期唯一脚本运行时')
 need('6', 'npm', ['-v'], 'ts-build 用')
@@ -51,7 +50,7 @@ for (const r of rows) {
 const bad = rows.filter(r => !r.ok)
 console.log(`\n${bad.length ? c.y + bad.length + ' 项缺失' + c.x : c.g + '全部就绪' + c.x}`)
 if (bad.length) {
-  console.log(`${c.d}缺失项先补：zig(0.13) / rustup target add aarch64-linux-android / gomobile init / flatc / NDK r27c${c.x}`)
+  console.log(`${c.d}缺失项先补：zig(0.13) / rustup target add aarch64-linux-android / flatc / NDK r27c${c.x}`)
   console.log(`${c.d}补不齐也能跑：orchestrate 会把缺工具的步骤 SKIP，其它步骤照常。${c.x}\n`)
   if (!soft) process.exit(1)
 }

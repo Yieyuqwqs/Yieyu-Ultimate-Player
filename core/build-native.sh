@@ -27,5 +27,6 @@ cmake --build "$BLD" -j "${YIEYU_JOBS:-4}"
 mkdir -p "$INS"
 command -v ccache >/dev/null 2>&1 && ccache --show-stats | head -12 || true
 cp -v "$BLD"/libyieyu_core.so "$INS"/
-"${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded "$INS/libyieyu_core.so" || true
+# ★ 这里**不 strip**：模块 11 的链接后处理（tools/obfuscate.mjs）要先重命名符号表再剥离，
+#   顺序反了等于先把符号表扔了，重命名直接变成空操作。
 echo "→ $INS/libyieyu_core.so  $(stat -c%s "$INS/libyieyu_core.so" 2>/dev/null || echo '?') bytes"
