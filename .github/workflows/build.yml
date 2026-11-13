@@ -16,8 +16,10 @@ on:
     # 只改文档/说明不触发构建（省 Actions 分钟）
     paths-ignore:
       - 'docs/**'
-      - '**.md'
-      - 'lua/**.lua'
+      - '*.md'          # 根目录 README/HANDOFF
+      - '**/*.md'       # 任意层级
+      - 'lua/**'        # 脚本资源改动不需要重编
+      - 'python/**'
 
 permissions:
   contents: write
