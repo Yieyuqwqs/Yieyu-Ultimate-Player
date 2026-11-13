@@ -7,6 +7,8 @@
 
 #include "../audio/aaudio_sink.h"
 #include "../audio/demux_platform.h"
+#include "../audio/dsd.h"          // [16] DSD → PCM
+#include "../audio/resampler.h"    // [14] 多相重采样
 #include "../dsp/dsp.h"
 #include "../sensor/gyro_asensor.h"   // [23] 姿态 → [17] 8D
 #include "../store/kv_store.h"        // [20] 播放进度落盘
@@ -17,11 +19,13 @@
 namespace yieyu {
 namespace {
 
-constexpr int    kChunkFrames = 2048;              // 每次解码的立体声帧数
+constexpr int    kChunkFrames = 2048;              // 每次产出的立体声帧数（输出侧）
+constexpr int    kMaxSrcFrames = 8192;             // 源侧一次最多读多少帧（重采样前）
 constexpr int    kRingFloats  = 1 << 17;           // 131072 float ≈ 65536 帧 ≈ 1.4s @44.1k
 constexpr size_t kBacklog     = (size_t)kRingFloats / 2;   // 环过半就等音频线程消费
 
-float g_scratch[kChunkFrames * 2];                 // 解码线程专用暂存
+float g_scratch[kChunkFrames * 2 + 1024];          // 解码线程专用暂存（输出域）
+float g_srcscratch[kMaxSrcFrames * 2];             // [14] 重采样前的源域暂存
 
 int pull_trampoline(void* ctx, float* out, int frames) {
   return static_cast<Player*>(ctx)->Pull(out, frames);
@@ -89,6 +93,11 @@ int Player::SeekMs(int64_t ms) {
   if (st == kIdle || st == kError) return -2;   // 没在放，无事可做
   seekReqMs_.store(ms);
   return 0;
+}
+
+void Player::SetTargetRate(int hz) {
+  if (hz != 0 && hz != 44100 && hz != 48000 && hz != 88200 && hz != 96000 && hz != 176400 && hz != 192000) return;
+  targetRate_.store(hz, std::memory_order_relaxed);
 }
 
 void Player::SetDsp(bool on) { dspOn_.store(on, std::memory_order_relaxed); }
@@ -216,13 +225,36 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
 
   int32_t rate = 48000, ch = 2;
   int64_t durUs = 0;
-  const int rc = yieyu_pdec_open(target, &rate, &ch, &durUs);
+  int32_t srcRate = 48000;
+  const int wantRate = targetRate_.load(std::memory_order_relaxed);
+  const int isDsf = dsd_probe(target);
+  dsd_.store(isDsf == 1, std::memory_order_relaxed);
+  resamp_.store(false, std::memory_order_relaxed);
+  int rc = 0;
+  if (isDsf == 1) {
+    // [16] DSD：固定解到 192k（除非用户显式指定），中间率由模块自己算
+    const int dsdOut = wantRate > 0 ? wantRate : 192000;
+    int outCh = 2;
+    rc = dsd_open(target, dsdOut, &rate, &outCh, &durUs);
+    srcRate = rate;
+    if (rc == 0) ch = outCh;
+  } else {
+    rc = yieyu_pdec_open(target, &rate, &ch, &durUs);
+    srcRate = rate;
+    if (rc == 0 && wantRate > 0 && wantRate != (int)rate) {
+      // [14] 升/降频：目标率固定，DSP 与声卡都按目标率跑
+      if (resample_init((int)rate, wantRate, ch) == 0) {
+        rate = wantRate;
+        resamp_.store(true, std::memory_order_relaxed);
+      }
+    }
+  }
   if (rc != 0) {
-    const char* why = yieyu_pdec_error();
-    LOGE("[13] 打开音频失败 rc=%d uri=%.180s（%s）", rc, target, why ? why : "?");
+    const char* why = (isDsf == 1) ? dsd_error() : yieyu_pdec_error();
+    LOGE("[13/16] 打开音频失败 rc=%d uri=%.180s（%s）", rc, target, why ? why : "?");
     {
       std::lock_guard<std::mutex> lk(errMu_);
-      std::snprintf(err_, sizeof(err_), "[13] 打不开音频 rc=%d：%s", rc,
+      std::snprintf(err_, sizeof(err_), "%s 打不开音频 rc=%d：%s", (isDsf == 1) ? "[16]" : "[13]", rc,
                     (why && *why) ? why : "未知原因");
     }
     state_.store(kError);
@@ -234,7 +266,8 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   const int sinkRc = yieyu_aaudio_start(rate_.load(std::memory_order_relaxed), 192, &pull_trampoline, this);
   if (sinkRc != 0) {
     LOGE("[15] AAudio 起不来 rate=%d rc=%d", (int)rate_.load(), sinkRc);
-    yieyu_pdec_close();
+    if (isDsf == 1) dsd_close();
+    else yieyu_pdec_close();
     {
       std::lock_guard<std::mutex> lk(errMu_);
       std::snprintf(err_, sizeof(err_), "[15] 声卡打不开 rc=%d（%d Hz）", sinkRc, (int)rate_.load());
@@ -287,8 +320,19 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
     if (ring_->readable() > kBacklog) { sleep_ms(3); continue; }
     const size_t want = (size_t)kChunkFrames * 2;
     if (ring_->writable() < want) { sleep_ms(2); continue; }
-    // ⑤ 解一块
-    const int n = yieyu_pdec_read(g_scratch, kChunkFrames);
+    // ⑤ 解一块（DSD 直接出目标率；PCM 需要时先出源域再 [14] 转）
+    int n = 0;
+    if (isDsf == 1) {
+      n = dsd_read(g_scratch, kChunkFrames);
+    } else if (resamp_.load(std::memory_order_relaxed)) {
+      int srcWant = (int)(((int64_t)kChunkFrames * srcRate) / (rate > 0 ? rate : 48000));
+      if (srcWant < 64) srcWant = 64;
+      if (srcWant > kMaxSrcFrames) srcWant = kMaxSrcFrames;
+      const int sN = yieyu_pdec_read(g_srcscratch, srcWant);
+      if (sN > 0) n = resample_process(g_srcscratch, sN, g_scratch, kChunkFrames + 512);
+    } else {
+      n = yieyu_pdec_read(g_scratch, kChunkFrames);
+    }
     if (n > 0) {
       // [17] 音效链：只在解码线程跑（音频线程零处理，守铁律 2）
       if (dspOn_.load(std::memory_order_relaxed)) {
@@ -307,7 +351,8 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
       }
       continue;
     }
-    if (yieyu_pdec_eos()) {
+    const int eos = (isDsf == 1) ? dsd_eos() : yieyu_pdec_eos();
+    if (eos) {
       // 播完：等环里剩下的全部播出去再收工（否则最后 1 秒会被切掉）
       if (ring_->readable() == 0) break;
       sleep_ms(10);
@@ -317,7 +362,8 @@ void Player::OpenAndPlay(const std::string& uri, uint64_t gen) {
   }
 
   StopSink();
-  yieyu_pdec_close();
+  if (isDsf == 1) dsd_close();
+  else yieyu_pdec_close();
   state_.store(kIdle);
 }
 
@@ -327,8 +373,12 @@ void Player::DoSeek(int64_t ms) {
   state_.store(kPreparing);
   sleep_ms(20);
   DrainRing();
-  if (yieyu_pdec_seek(ms * 1000) != 0) {
-    LOGE("[13] seek 失败 %lld ms", (long long)ms);
+  const bool wasDsd = dsd_.load(std::memory_order_relaxed);
+  if (wasDsd) {
+    if (dsd_seekMs(ms) != 0) LOGE("[16] DSD seek 失败 %lld ms", (long long)ms);
+  } else {
+    if (yieyu_pdec_seek(ms * 1000) != 0) LOGE("[13] seek 失败 %lld ms", (long long)ms);
+    if (resamp_.load(std::memory_order_relaxed)) resample_reset();   // [14] 清历史，别把旧位置的声音带过来
   }
   baseMs_.store(ms, std::memory_order_relaxed);
   playedFrames_.store(0, std::memory_order_relaxed);

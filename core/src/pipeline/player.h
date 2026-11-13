@@ -33,6 +33,12 @@ class Player {
   bool DspOn() const;
   void SetEqGain(int band, float db);                       // 0..30 段，±24 dB
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
+  // [14] 输出采样率：0=自动（PCM 跟源、DSD 固定 192k），或 48000/96000/192000 强制升频
+  void SetTargetRate(int hz);
+  int  TargetRate() const { return targetRate_.load(std::memory_order_relaxed); }
+  // 本曲是否走了 [16] DSD 解码（诊断面板看）
+  bool IsDsd() const { return dsd_.load(std::memory_order_relaxed); }
+  bool IsResampling() const { return resamp_.load(std::memory_order_relaxed); }
   void Shutdown();
 
   // ── 数据面（只在音频线程调用）─────────────────────────────────────
@@ -90,6 +96,9 @@ class Player {
   std::atomic<float>   peakR_{0.0f};
   std::atomic<bool>    sinkUp_{false};
   std::atomic<bool>    dspOn_{false};   // [17] 默认旁路
+  std::atomic<int>     targetRate_{0};  // [14] 0=自动
+  std::atomic<bool>    dsd_{false};     // [16] 本曲是否 DSD
+  std::atomic<bool>    resamp_{false};  // [14] 本曲是否真在重采样
   std::atomic<int32_t> wfail_{0};       // 生产者写不进环的次数（>0 就是链路故障）
   std::atomic<int64_t> chunks_{0};      // 解码线程成功产出的块数（活性指标）
   mutable std::mutex   errMu_;

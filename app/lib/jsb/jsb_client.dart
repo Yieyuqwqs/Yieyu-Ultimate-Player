@@ -165,6 +165,9 @@ class JsbClient {
       _lib.lookupFunction<_IntFloatVoidNative, _IntFloatVoidDart>('Yieyu_SetEqGain');
   late final _ToneVoidDart _setTone =
       _lib.lookupFunction<_ToneVoidNative, _ToneVoidDart>('Yieyu_SetTone');
+  // [14] 输出采样率：0=自动 / 48000 / 96000 / 192000
+  late final _IntVoidDart _setRate =
+      _lib.lookupFunction<_IntVoidNative, _IntVoidDart>('Yieyu_SetRate');
   late final _DirDart _logDir =
       _lib.lookupFunction<_DirNative, _DirDart>('Yieyu_LogDir');
   late final _CallDart _scriptCallFn =
@@ -312,6 +315,11 @@ class JsbClient {
     } finally {
       malloc.free(buf);
     }
+  }
+
+  /// [14] 输出采样率（0=自动）。下一次起播生效（正在放的曲子不中途换流）。
+  void setRate(int hz) {
+    _setRate(hz);
   }
 
   int kvCount() => _kvCount();

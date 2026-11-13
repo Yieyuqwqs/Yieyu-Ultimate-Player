@@ -96,9 +96,9 @@ set(SRC_JSB     src/jsb/jsb.cpp                        # [24]
 set(SRC_PIPE    src/pipeline/engine.cpp
                 src/pipeline/player.cpp)                # 解码线程 + PCM 环调度
 set(SRC_AUDIO   src/audio/demux_platform.c             # [13] 平台兜底：AMediaExtractor+AMediaCodec
-                src/audio/resample_speex.cpp           # [14] SpeexDSP
+                src/audio/resampler.cpp                # [14] 自研多相重采样
                 src/audio/aaudio_sink.c                # [15]
-                src/audio/dsd_eigen.cpp)               # [16]
+                src/audio/dsd.cpp)                     # [16] 自研 DSF/DFF → PCM
 set(SRC_DSP     src/dsp/eq31.cpp                       # [17]
                 src/dsp/tube_vinyl.cpp                 # [17]
                 src/dsp/hrtf_8d.cpp)                   # [17] + [23]

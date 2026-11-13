@@ -74,6 +74,10 @@ YIEYU_API void Yieyu_SetDsp(int on);                        // 1=EQ+胆机/黑�
 YIEYU_API void Yieyu_SetEqGain(int band, float db);         // band 0..30，±24 dB
 YIEYU_API void Yieyu_SetTone(int tube, int vinyl, int lpf, float drive);
 
+// ⑬ [14] 输出采样率：0=自动（PCM 跟源、DSD→192k），或 48000/96000/192000 强制升频。
+//    打开后整条链路（解码 → [14] → [17] → [15]）都按目标率跑，声卡也按目标率开流。
+YIEYU_API void Yieyu_SetRate(int hz);
+
 // ⑨ [5] 搜歌（真实网络，走 Go 编的 libyieyu_fetch.so）。
 //    0=已受理（异步，网络在独立线程）；结果从 Yieyu_Poll 取：
 //      事件帧 = [0] 类型 'S'=结果JSON数组 / 'E'=错误文案

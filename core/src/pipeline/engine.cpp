@@ -230,6 +230,7 @@ void Engine::SetVolume(float v) { vol_.store(v); Player::Instance().SetVolume(v)
 void Engine::PlayerError(char* out, size_t cap) const { Player::Instance().LastError(out, cap); }
 void Engine::SetDsp(bool on) { dspOn_.store(on ? 1 : 0); Player::Instance().SetDsp(on); }
 void Engine::SetEqGain(int band, float db) { Player::Instance().SetEqGain(band, db); }
+void Engine::SetRate(int hz) { Player::Instance().SetTargetRate(hz); }
 void Engine::SetTone(bool tube, bool vinyl, bool lpf, float drive) {
   Player::Instance().SetTone(tube, vinyl, lpf, drive);
 }

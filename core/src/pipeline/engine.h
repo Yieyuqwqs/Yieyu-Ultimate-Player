@@ -39,6 +39,7 @@ class Engine {
   void SetDsp(bool on);
   void SetEqGain(int band, float db);
   void SetTone(bool tube, bool vinyl, bool lpf, float drive);
+  void SetRate(int hz);                 // [14] 输出采样率（0=自动）
   void PlayerError(char* out, size_t cap) const;
 
   // ── [5]/[9] 搜歌与点歌（真实网络，走 Go 编的 libyieyu_fetch.so）────────
