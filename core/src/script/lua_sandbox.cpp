@@ -16,6 +16,7 @@
 #include "lua_sandbox.h"
 #include "../common/log.h"
 #include <cstdio>
+#include <cstdlib>   // strtod（JSON 数字解析）
 #include <cstring>
 #include <dirent.h>
 #include <sys/stat.h>
